@@ -1,0 +1,510 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center" id="detailRoot" data-book-id="{{ book.id }}" data-index-url="{{ url_for('index') }}">
+    <div class="col-lg-10">
+        <!-- 도서 상세 정보 카드 -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="row g-4">
+                    <!-- 좌측 다중 이미지 뷰어 -->
+                    <div class="col-md-4 text-center">
+                        <div class="d-flex align-items-center justify-content-center bg-light border rounded p-3 mx-auto mb-2"
+                             style="width: 100%; max-width: 250px; height: 320px;">
+                            <img id="bookCoverImg"
+                                 src="{{ url_for('static', filename='uploads/' + book_images[0]) }}"
+                                 alt="{{ book.title }}"
+                                 class="rounded shadow-sm"
+                                 style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                        </div>
+
+                        {% if book_images|length > 1 %}
+                        <div class="d-flex justify-content-center flex-wrap gap-2 mt-2">
+                            {% for img_name in book_images %}
+                            {% set img_url = url_for('static', filename='uploads/' + img_name) %}
+                            <button type="button"
+                                    class="btn p-1 border rounded bg-white detail-thumb-btn {% if loop.first %}border-primary border-2{% endif %}"
+                                    data-img-src="{{ img_url }}"
+                                    style="width: 52px; height: 64px;">
+                                <img src="{{ img_url }}" alt="도서 사진 {{ loop.index }}" style="width: 100%; height: 100%; object-fit: contain;">
+                            </button>
+                            {% endfor %}
+                        </div>
+                        <small class="text-muted d-block mt-1">총 {{ book_images|length }}장의 사진 (클릭하여 전환)</small>
+                        {% endif %}
+                    </div>
+
+                    <!-- 우측 상세 정보 -->
+                    <div class="col-md-8 d-flex flex-column justify-content-between">
+                        <div>
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                <div>
+                                    {% if book.status == 'AVAILABLE' %}
+                                        <span class="badge bg-success me-1">판매중</span>
+                                    {% elif book.status == 'RESERVED' %}
+                                        <span class="badge bg-warning text-dark me-1">예약중</span>
+                                    {% elif book.status == 'SOLD' %}
+                                        <span class="badge bg-secondary me-1">거래완료</span>
+                                    {% endif %}
+                                    <span class="badge bg-info text-dark">상태 {{ book.condition_grade }}</span>
+                                </div>
+
+                                {% if g.user and (g.user.id == book.seller_id or g.user.is_admin == 1) %}
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <select id="bookStatusSelect" class="form-select form-select-sm" style="width: auto;" data-book-id="{{ book.id }}">
+                                        <option value="AVAILABLE" {% if book.status == 'AVAILABLE' %}selected{% endif %}>판매중</option>
+                                        <option value="RESERVED" {% if book.status == 'RESERVED' %}selected{% endif %}>예약중</option>
+                                        <option value="SOLD" {% if book.status == 'SOLD' %}selected{% endif %}>거래완료</option>
+                                    </select>
+                                    <a href="{{ url_for('edit_post', book_id=book.id) }}" class="btn btn-sm btn-outline-primary">수정</a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteBook" data-book-id="{{ book.id }}">삭제</button>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <h3 class="fw-bold mb-2">{{ book.title }}</h3>
+                            <p class="text-muted mb-3">
+                                저자: {{ book.author }}
+                                {% if book.publisher %} | 출판사: {{ book.publisher }}{% endif %}
+                            </p>
+
+                            <div class="mb-3">
+                                {% if book.original_price %}
+                                    <span class="text-muted text-decoration-line-through me-2">{{ "{:,}".format(book.original_price) }}원</span>
+                                {% endif %}
+                                <span class="fs-4 fw-bold text-primary">{{ "{:,}".format(book.selling_price) }}원</span>
+                            </div>
+
+                            <!-- AI 상태 검수 결과 구분 영역 -->
+                            <div class="border border-info rounded bg-info bg-opacity-10 py-2 px-3 mb-3">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="badge bg-info text-dark">AI 상태 검수 결과</span>
+                                </div>
+                                {% if book.ai_evaluated_result %}
+                                    <p class="small mb-0 text-dark">{{ book.ai_evaluated_result }}</p>
+                                {% else %}
+                                    <p class="small mb-0 text-muted">등록된 AI 상태 검수 결과가 없습니다.</p>
+                                {% endif %}
+                            </div>
+
+                            <div class="p-3 bg-light rounded border mb-3" style="white-space: pre-line;">{{ book.description }}</div>
+                        </div>
+
+                        <!-- 판매자 정보 -->
+                        <div class="d-flex justify-content-between align-items-center border-top pt-3">
+                            <div>
+                                <span class="text-muted small">판매자:</span>
+                                <a href="{{ url_for('user_profile', user_id=book.seller_id) }}" class="fw-bold text-decoration-none ms-1">
+                                    {{ book.name }} ({{ book.student_id }})
+                                </a>
+                            </div>
+                            <span class="badge bg-light text-dark border">신뢰 지수 {{ book.trust_score }}점</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 예약 관리 패널 -->
+                {% if book.status == 'RESERVED' and active_trade and g.user and (g.user.id in [book.seller_id, active_trade.buyer_id] or g.user.is_admin == 1) %}
+                <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-0">
+                    <div>
+                        <strong>현재 예약 진행 중</strong>
+                        <span class="ms-2">예약자: {{ active_trade.buyer_name }} ({{ active_trade.buyer_student_id }})</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        {% if g.user.id == book.seller_id or g.user.is_admin == 1 %}
+                        <button type="button" class="btn btn-sm btn-success" id="btnCompleteTrade" data-trade-id="{{ active_trade.id }}">거래 완료</button>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="btnCancelTrade" data-trade-id="{{ active_trade.id }}">예약 취소</button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 동일 도서 다른 상품 & 구매자용 AI 상품 비교 분석 -->
+        {% if similar_books %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span class="fw-bold">같은 도서의 다른 판매글 ({{ similar_books|length }}건)</span>
+                <button type="button" id="btnAiCompare" class="btn btn-sm btn-outline-primary" data-book-id="{{ book.id }}">
+                    Gemini AI 상품 비교 분석
+                </button>
+            </div>
+
+            <!-- AI 상품 비교 분석 결과 박스 -->
+            <div id="aiCompareBox" class="p-3 bg-primary bg-opacity-10 border-bottom d-none">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-primary">AI 구매 추천 분석</span>
+                    <small class="text-muted">가격 · 상태 등급 · AI 상태 검수 · 판매자 신뢰지수 종합 비교</small>
+                </div>
+                <p id="aiCompareResultText" class="small mb-0 text-dark" style="white-space: pre-line;"></p>
+            </div>
+
+            <div class="list-group list-group-flush">
+                {% for sb in similar_books %}
+                <a href="{{ url_for('detail', book_id=sb.id) }}" class="list-group-item list-group-item-action d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="badge bg-secondary me-1">상품 #{{ sb.id }}</span>
+                        <span class="badge bg-info text-dark me-1">{{ sb.condition_grade }}</span>
+                        <span class="fw-semibold">{{ sb.name }} ({{ sb.student_id }})</span>
+                        <small class="text-muted ms-1">· 신뢰 {{ sb.trust_score }}점</small>
+                        {% if sb.ai_evaluated_result %}
+                        <small class="text-muted d-block mt-1">AI 검수: {{ sb.ai_evaluated_result }}</small>
+                        {% endif %}
+                    </div>
+                    <span class="fw-bold text-primary">{{ "{:,}".format(sb.selling_price) }}원</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 거래 요청 댓글 및 답글 영역 -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold">거래 요청 및 문의 댓글 ({{ comments|length }})</span>
+            </div>
+            <div class="card-body p-4">
+                {% if g.user %}
+                <form id="commentForm" class="mb-4">
+                    <div class="input-group">
+                        <input type="text" id="commentContent" class="form-control" placeholder="구매 희망 의사나 도서 상태 문의 댓글을 입력하세요." required>
+                        <button type="submit" class="btn btn-primary">댓글 등록</button>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-light border text-center small mb-4">
+                    댓글을 작성하려면 <a href="{{ url_for('login') }}">로그인</a>이 필요합니다.
+                </div>
+                {% endif %}
+
+                {% if comments %}
+                <div class="d-flex flex-column gap-3">
+                    {% for comment in comments %}
+                    <div class="border rounded p-3 {% if comment.is_approved %}border-success bg-success bg-opacity-10{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                            <div>
+                                <a href="{{ url_for('user_profile', user_id=comment.user_id) }}" class="fw-bold text-decoration-none">
+                                    {{ comment.name }} ({{ comment.student_id }})
+                                </a>
+                                <span class="badge bg-light text-dark border ms-1">신뢰 {{ comment.trust_score }}점</span>
+                                {% if comment.is_approved %}
+                                <span class="badge bg-success ms-1">거래 승인됨</span>
+                                {% endif %}
+                                <small class="text-muted ms-2">{{ comment.created_at }}</small>
+                            </div>
+
+                            <div class="d-flex align-items-center gap-1">
+                                {% if g.user and (g.user.id == book.seller_id or g.user.is_admin == 1) and book.status == 'AVAILABLE' %}
+                                <button type="button" class="btn btn-sm btn-outline-success btn-toggle-reply" data-comment-id="{{ comment.id }}">
+                                    답글 및 거래 승인
+                                </button>
+                                {% endif %}
+
+                                {% if g.user and (g.user.id == comment.user_id or g.user.is_admin == 1) %}
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-comment" data-comment-id="{{ comment.id }}">
+                                    삭제
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <p class="mb-0 mt-2">{{ comment.content }}</p>
+
+                        <!-- 거래 승인 답글 입력 폼 -->
+                        {% if g.user and (g.user.id == book.seller_id or g.user.is_admin == 1) and book.status == 'AVAILABLE' %}
+                        <div id="replyFormBox-{{ comment.id }}" class="mt-3 d-none">
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="replyInput-{{ comment.id }}" class="form-control" placeholder="거래 장소 및 시간 안내 답글을 입력하면 예약이 확정됩니다.">
+                                <button type="button" class="btn btn-success btn-submit-reply" data-book-id="{{ book.id }}" data-comment-id="{{ comment.id }}">승인 등록</button>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- 대댓글(답글) 목록 -->
+                        {% set replies = replies_map.get(comment.id, []) %}
+                        {% if replies %}
+                        <div class="mt-3 ps-3 border-start border-2 d-flex flex-column gap-2">
+                            {% for reply in replies %}
+                            <div class="bg-light rounded p-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="fw-bold small">{{ reply.name }} ({{ reply.student_id }})</span>
+                                        <small class="text-muted ms-2">{{ reply.created_at }}</small>
+                                    </div>
+                                    {% if g.user and (g.user.id == reply.user_id or g.user.is_admin == 1) %}
+                                    <button type="button" class="btn btn-sm btn-link text-danger text-decoration-none p-0 small btn-delete-comment" data-comment-id="{{ reply.id }}">
+                                        삭제
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                <div class="small mt-1">{{ reply.content }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center my-3">등록된 댓글이 없습니다.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DEFAULT_COVER_SVG = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="240">' +
+    '<rect width="180" height="240" fill="#e9ecef"/>' +
+    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6c757d" font-size="14">No Cover</text>' +
+    '</svg>'
+);
+
+const detailRoot = document.getElementById('detailRoot');
+const currentBookId = detailRoot ? detailRoot.dataset.bookId : '';
+const indexPageUrl = detailRoot ? detailRoot.dataset.indexUrl : '/';
+
+const bookCoverImg = document.getElementById('bookCoverImg');
+if (bookCoverImg) {
+    bookCoverImg.addEventListener('error', function() {
+        this.onerror = null;
+        this.src = DEFAULT_COVER_SVG;
+    });
+}
+
+document.querySelectorAll('.detail-thumb-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        if (bookCoverImg) {
+            bookCoverImg.src = this.dataset.imgSrc;
+        }
+        document.querySelectorAll('.detail-thumb-btn').forEach(b => {
+            b.classList.remove('border-primary', 'border-2');
+        });
+        this.classList.add('border-primary', 'border-2');
+    });
+});
+
+function notify(title, msg, cb) {
+    if (typeof showAlertModal === 'function') {
+        showAlertModal(title, msg, cb);
+    } else {
+        alert(msg);
+        if (cb) cb();
+    }
+}
+
+function askConfirm(title, msg, onConfirm) {
+    if (typeof showConfirmModal === 'function') {
+        showConfirmModal(title, msg, onConfirm);
+    } else if (confirm(msg)) {
+        onConfirm();
+    }
+}
+
+// 구매자용 동일 도서 상품 AI 비교 분석
+const btnAiCompare = document.getElementById('btnAiCompare');
+if (btnAiCompare) {
+    btnAiCompare.addEventListener('click', function() {
+        const bookId = this.dataset.bookId;
+        const box = document.getElementById('aiCompareBox');
+        const textEl = document.getElementById('aiCompareResultText');
+
+        btnAiCompare.disabled = true;
+        btnAiCompare.textContent = 'AI 상품 비교 분석 중...';
+
+        fetch(`/api/book/${bookId}/ai-compare`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.result) {
+                textEl.textContent = data.result;
+                box.classList.remove('d-none');
+            } else if (data.error) {
+                notify('AI 비교 분석 오류', data.error);
+            }
+        })
+        .catch(() => {
+            notify('오류', 'AI 상품 비교 요청 중 네트워크 오류가 발생했습니다.');
+        })
+        .finally(() => {
+            btnAiCompare.disabled = false;
+            btnAiCompare.textContent = 'Gemini AI 상품 비교 분석';
+        });
+    });
+}
+
+const commentForm = document.getElementById('commentForm');
+if (commentForm) {
+    commentForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const content = document.getElementById('commentContent').value.trim();
+        if (!content) return;
+
+        fetch(`/api/book/${currentBookId}/comment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                notify('안내', data.message);
+            }
+        });
+    });
+}
+
+const statusSelect = document.getElementById('bookStatusSelect');
+if (statusSelect) {
+    statusSelect.addEventListener('change', function() {
+        const bookId = this.dataset.bookId;
+        const status = this.value;
+        fetch(`/api/book/${bookId}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: status })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                notify('상태 변경 실패', data.message, () => location.reload());
+            }
+        });
+    });
+}
+
+const btnDeleteBook = document.getElementById('btnDeleteBook');
+if (btnDeleteBook) {
+    btnDeleteBook.addEventListener('click', function() {
+        const bookId = this.dataset.bookId;
+        askConfirm('게시글 삭제', '이 게시글을 삭제하시겠습니까?', function() {
+            fetch(`/api/book/${bookId}/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.href = indexPageUrl;
+                } else {
+                    notify('삭제 실패', data.message);
+                }
+            });
+        });
+    });
+}
+
+const btnCompleteTrade = document.getElementById('btnCompleteTrade');
+if (btnCompleteTrade) {
+    btnCompleteTrade.addEventListener('click', function() {
+        const tradeId = this.dataset.tradeId;
+        askConfirm('거래 완료', '거래를 완료 처리하시겠습니까?', function() {
+            fetch(`/api/trade/${tradeId}/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    notify('오류', data.message);
+                }
+            });
+        });
+    });
+}
+
+const btnCancelTrade = document.getElementById('btnCancelTrade');
+if (btnCancelTrade) {
+    btnCancelTrade.addEventListener('click', function() {
+        const tradeId = this.dataset.tradeId;
+        const reason = prompt('예약 취소 사유를 입력해주세요:', '일정 조율 불가');
+        if (reason === null) return;
+        if (!reason.trim()) {
+            notify('입력 필요', '취소 사유를 입력해주세요.');
+            return;
+        }
+
+        fetch(`/api/trade/${tradeId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cancel_reason: reason.trim() })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                notify('취소 실패', data.message);
+            }
+        });
+    });
+}
+
+document.querySelectorAll('.btn-toggle-reply').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const commentId = this.dataset.commentId;
+        const box = document.getElementById(`replyFormBox-${commentId}`);
+        if (box) box.classList.toggle('d-none');
+    });
+});
+
+document.querySelectorAll('.btn-submit-reply').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const bookId = this.dataset.bookId;
+        const commentId = this.dataset.commentId;
+        const input = document.getElementById(`replyInput-${commentId}`);
+        const content = input ? input.value.trim() : '';
+        if (!content) {
+            notify('입력 필요', '답글 내용을 입력해주세요.');
+            return;
+        }
+
+        fetch(`/api/book/${bookId}/comment/${commentId}/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                notify('안내', data.message);
+            }
+        });
+    });
+});
+
+document.querySelectorAll('.btn-delete-comment').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const commentId = this.dataset.commentId;
+        askConfirm('댓글 삭제', '이 댓글을 삭제하시겠습니까?', function() {
+            fetch(`/api/comment/${commentId}/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    notify('삭제 실패', data.message);
+                }
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

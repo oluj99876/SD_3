@@ -1,0 +1,525 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="card-title mb-4">중고 도서 등록</h3>
+
+                <!-- 국립중앙도서관 도서 자동 검색 영역 -->
+                <div class="p-3 bg-light rounded border mb-4">
+                    <label class="form-label fw-bold text-primary">국립중앙도서관 API 도서 정보 자동 불러오기</label>
+                    <div class="input-group">
+                        <input type="text" id="nlSearchInput" class="form-control" placeholder="검색할 도서명을 입력하세요 (예: 컴퓨터 구조론, 운영체제)">
+                        <button type="button" id="btnNlSearch" class="btn btn-outline-primary">도서 검색</button>
+                    </div>
+                    <small class="text-muted d-block mt-1">검색 결과에서 도서를 선택하면 도서명, 저자, 출판사, 정가, 표지 이미지가 자동으로 입력됩니다.</small>
+
+                    <!-- 검색 결과 컨테이너 -->
+                    <div id="nlSearchContainer" class="mt-3 d-none">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small id="nlSearchSummary" class="fw-bold text-secondary"></small>
+                            <button type="button" id="btnCloseSearch" class="btn btn-sm btn-link text-muted text-decoration-none p-0">검색 목록 닫기</button>
+                        </div>
+                        <div id="nlSearchResults" class="list-group"></div>
+                        <nav id="nlPaginationNav" class="mt-3 d-none" aria-label="도서 검색 결과 페이지 이동">
+                            <ul id="nlPaginationList" class="pagination pagination-sm justify-content-center mb-0"></ul>
+                        </nav>
+                    </div>
+                </div>
+
+                <form id="registerBookForm" action="{{ url_for('register_book') }}" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" id="api_image_url" name="api_image_url" value="">
+                    <input type="hidden" id="primary_image_key" name="primary_image_key" value="">
+
+                    <div class="row">
+                        <!-- 좌측 대표 썸네일 미리보기 -->
+                        <div class="col-md-4 mb-3 text-center">
+                            <label class="form-label fw-bold d-block">대표 이미지 (썸네일) 미리보기</label>
+                            <div class="d-flex align-items-center justify-content-center bg-light border rounded mx-auto mb-2 p-2"
+                                 style="width: 190px; height: 255px;">
+                                <img id="coverPreview"
+                                     src=""
+                                     alt="대표 이미지 미리보기"
+                                     referrerpolicy="no-referrer"
+                                     class="rounded shadow-sm"
+                                     style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                            </div>
+                            <small id="coverStatusText" class="text-muted d-block mb-2">선택된 이미지가 없습니다.</small>
+                            <div>
+                                <button type="button" id="btnResetCover" class="btn btn-sm btn-outline-secondary">전체 이미지 초기화</button>
+                            </div>
+                        </div>
+
+                        <!-- 우측 서지, 가격 및 다중 사진 업로드 -->
+                        <div class="col-md-8">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">도서명</label>
+                                    <input type="text" id="title" name="title" class="form-control" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">저자</label>
+                                    <input type="text" id="author" name="author" class="form-control" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">출판사</label>
+                                    <input type="text" id="publisher" name="publisher" class="form-control">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">정가</label>
+                                    <input type="number" id="original_price" name="original_price" class="form-control" placeholder="예: 30000">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">판매가</label>
+                                    <input type="number" id="selling_price" name="selling_price" class="form-control" required placeholder="예: 15000">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">상태 등급</label>
+                                <select name="condition_grade" id="condition_grade" class="form-select" required>
+                                    <option value="최상">최상 (밑줄/훼손 전혀 없음)</option>
+                                    <option value="상">상 (약간의 필기 있음)</option>
+                                    <option value="중">중 (필기 및 사용감 다수)</option>
+                                    <option value="하">하 (본문 훼손/변색 있음)</option>
+                                </select>
+                            </div>
+
+                            <!-- 다중 이미지 선택 및 관리 영역 -->
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label mb-0 fw-semibold">도서 상태 사진 업로드 (여러 장 선택 가능)</label>
+                                    <span id="imageCountBadge" class="badge bg-secondary">0장</span>
+                                </div>
+                                <input type="file" id="imageFileInput" name="images" class="form-control" accept="image/*" multiple>
+                                <small class="text-muted d-block mt-1">
+                                    아래 목록에서 원하는 사진을 클릭하면 <strong>대표 이미지(목록 썸네일)</strong>로 지정됩니다.
+                                </small>
+
+                                <div id="imageGallery" class="d-flex flex-wrap gap-2 mt-3 p-2 bg-light border rounded d-none"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">상세 설명</label>
+                        <textarea name="description" id="description" class="form-control" rows="4" required placeholder="필기 여부, 밑줄, 표지 훼손 등 도서의 상세 상태를 적어주세요."></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <button type="button" id="btn-ai-eval" class="btn btn-outline-info btn-sm">Gemini AI 상태 자동 평가하기</button>
+                        <small class="text-muted ms-2">입력한 설명과 첨부한 사진을 바탕으로 AI가 상태 등급과 검수 요약을 자동 생성합니다.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">AI 상태 검수</label>
+                        <input type="text" name="ai_evaluated_result" id="ai_evaluated_result" class="form-control bg-light" readonly placeholder="AI 상태 자동 평가하기 버튼을 누르면 검수 결과가 표시됩니다.">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">등록 완료</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DEFAULT_COVER = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="240" viewBox="0 0 180 240">' +
+    '<rect width="180" height="240" fill="#e9ecef"/>' +
+    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6c757d" font-family="sans-serif" font-size="14">No Cover</text>' +
+    '</svg>'
+);
+
+const nlSearchInput = document.getElementById('nlSearchInput');
+const btnNlSearch = document.getElementById('btnNlSearch');
+const nlSearchContainer = document.getElementById('nlSearchContainer');
+const nlSearchSummary = document.getElementById('nlSearchSummary');
+const nlSearchResults = document.getElementById('nlSearchResults');
+const nlPaginationNav = document.getElementById('nlPaginationNav');
+const nlPaginationList = document.getElementById('nlPaginationList');
+
+const coverPreview = document.getElementById('coverPreview');
+const coverStatusText = document.getElementById('coverStatusText');
+const apiImageUrlInput = document.getElementById('api_image_url');
+const primaryImageKeyInput = document.getElementById('primary_image_key');
+const imageFileInput = document.getElementById('imageFileInput');
+const imageGallery = document.getElementById('imageGallery');
+const imageCountBadge = document.getElementById('imageCountBadge');
+const registerBookForm = document.getElementById('registerBookForm');
+
+coverPreview.src = DEFAULT_COVER;
+
+let currentSearchQuery = '';
+let apiCoverUrl = '';
+let uploadedFiles = [];
+let primarySelection = '';
+
+function applyMainPreview(url, isExternal, labelText) {
+    if (!url) {
+        coverPreview.onerror = null;
+        coverPreview.src = DEFAULT_COVER;
+        coverStatusText.textContent = labelText || '선택된 이미지가 없습니다.';
+        coverStatusText.className = 'text-muted d-block mb-2';
+        return;
+    }
+
+    if (isExternal) {
+        coverPreview.onerror = function() {
+            this.onerror = function() {
+                this.onerror = null;
+                this.src = DEFAULT_COVER;
+            };
+            this.src = `/api/nl-cover-proxy?url=${encodeURIComponent(url)}`;
+        };
+    } else {
+        coverPreview.onerror = null;
+    }
+
+    coverPreview.src = url;
+    coverStatusText.textContent = labelText || '대표 이미지로 지정되었습니다.';
+    coverStatusText.className = 'text-primary fw-semibold d-block mb-2';
+}
+
+function syncGalleryUI() {
+    const items = [];
+    if (apiCoverUrl) {
+        items.push({
+            key: 'api',
+            label: 'API 표지',
+            src: apiCoverUrl,
+            isExternal: true
+        });
+    }
+    uploadedFiles.forEach((file, idx) => {
+        items.push({
+            key: `file_${idx}`,
+            label: `사진 ${idx + 1}`,
+            src: URL.createObjectURL(file),
+            isExternal: false
+        });
+    });
+
+    imageCountBadge.textContent = `${items.length}장`;
+
+    if (items.length === 0) {
+        primarySelection = '';
+        primaryImageKeyInput.value = '';
+        apiImageUrlInput.value = '';
+        imageGallery.innerHTML = '';
+        imageGallery.classList.add('d-none');
+        applyMainPreview('', false, '선택된 이미지가 없습니다.');
+        return;
+    }
+
+    if (!items.some(it => it.key === primarySelection)) {
+        primarySelection = items[0].key;
+    }
+
+    primaryImageKeyInput.value = primarySelection;
+    apiImageUrlInput.value = apiCoverUrl;
+    imageGallery.classList.remove('d-none');
+    imageGallery.innerHTML = '';
+
+    items.forEach(item => {
+        const isPrimary = item.key === primarySelection;
+        if (isPrimary) {
+            applyMainPreview(item.src, item.isExternal, `대표 이미지: ${item.label}`);
+        }
+
+        const card = document.createElement('div');
+        card.className = `position-relative border rounded bg-white p-1 text-center ${isPrimary ? 'border-primary border-2 shadow-sm' : ''}`;
+        card.style.width = '92px';
+        card.style.cursor = 'pointer';
+        card.title = '클릭하여 대표 이미지로 지정';
+
+        const img = document.createElement('img');
+        img.referrerPolicy = 'no-referrer';
+        img.style.width = '80px';
+        img.style.height = '96px';
+        img.style.objectFit = 'contain';
+        img.className = 'rounded d-block mx-auto';
+        if (item.isExternal) {
+            img.onerror = function() {
+                this.onerror = function() {
+                    this.onerror = null;
+                    this.src = DEFAULT_COVER;
+                };
+                this.src = `/api/nl-cover-proxy?url=${encodeURIComponent(item.src)}`;
+            };
+        }
+        img.src = item.src;
+
+        const badge = document.createElement('span');
+        badge.className = `badge d-block mt-1 text-truncate ${isPrimary ? 'bg-primary' : 'bg-light text-dark border'}`;
+        badge.style.fontSize = '0.7rem';
+        badge.textContent = isPrimary ? '★ 대표' : item.label;
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-danger btn-sm position-absolute top-0 end-0 p-0 d-flex align-items-center justify-content-center';
+        delBtn.style.width = '20px';
+        delBtn.style.height = '20px';
+        delBtn.style.fontSize = '12px';
+        delBtn.textContent = '×';
+        delBtn.title = '이미지 제외';
+        delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.key === 'api') {
+                apiCoverUrl = '';
+            } else if (item.key.startsWith('file_')) {
+                const removeIdx = parseInt(item.key.replace('file_', ''), 10);
+                uploadedFiles.splice(removeIdx, 1);
+            }
+            syncGalleryUI();
+        });
+
+        card.addEventListener('click', () => {
+            primarySelection = item.key;
+            syncGalleryUI();
+        });
+
+        card.appendChild(delBtn);
+        card.appendChild(img);
+        card.appendChild(badge);
+        imageGallery.appendChild(card);
+    });
+}
+
+imageFileInput.addEventListener('change', function() {
+    if (this.files && this.files.length > 0) {
+        const hadNoImages = !apiCoverUrl && uploadedFiles.length === 0;
+        Array.from(this.files).forEach(f => uploadedFiles.push(f));
+        if (hadNoImages) {
+            primarySelection = 'file_0';
+        }
+        this.value = '';
+        syncGalleryUI();
+    }
+});
+
+registerBookForm.addEventListener('submit', function() {
+    const dt = new DataTransfer();
+    uploadedFiles.forEach(file => dt.items.add(file));
+    imageFileInput.files = dt.files;
+});
+
+document.getElementById('btnResetCover').addEventListener('click', function() {
+    apiCoverUrl = '';
+    uploadedFiles = [];
+    imageFileInput.value = '';
+    syncGalleryUI();
+});
+
+function renderPagination(currentPage, totalPages) {
+    nlPaginationList.innerHTML = '';
+    if (totalPages <= 1) {
+        nlPaginationNav.classList.add('d-none');
+        return;
+    }
+    nlPaginationNav.classList.remove('d-none');
+
+    const prevLi = document.createElement('li');
+    prevLi.className = `page-item ${currentPage <= 1 ? 'disabled' : ''}`;
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'page-link';
+    prevBtn.textContent = '이전';
+    prevBtn.disabled = currentPage <= 1;
+    prevBtn.addEventListener('click', () => searchNationalLibrary(currentPage - 1, currentSearchQuery));
+    prevLi.appendChild(prevBtn);
+    nlPaginationList.appendChild(prevLi);
+
+    const maxVisible = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    if (endPage - startPage + 1 < maxVisible) {
+        startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+
+    for (let p = startPage; p <= endPage; p++) {
+        const pageLi = document.createElement('li');
+        pageLi.className = `page-item ${p === currentPage ? 'active' : ''}`;
+        const pageBtn = document.createElement('button');
+        pageBtn.type = 'button';
+        pageBtn.className = 'page-link';
+        pageBtn.textContent = p;
+        pageBtn.addEventListener('click', () => {
+            if (p !== currentPage) searchNationalLibrary(p, currentSearchQuery);
+        });
+        pageLi.appendChild(pageBtn);
+        nlPaginationList.appendChild(pageLi);
+    }
+
+    const nextLi = document.createElement('li');
+    nextLi.className = `page-item ${currentPage >= totalPages ? 'disabled' : ''}`;
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'page-link';
+    nextBtn.textContent = '다음';
+    nextBtn.disabled = currentPage >= totalPages;
+    nextBtn.addEventListener('click', () => searchNationalLibrary(currentPage + 1, currentSearchQuery));
+    nextLi.appendChild(nextBtn);
+    nlPaginationList.appendChild(nextLi);
+}
+
+function searchNationalLibrary(page = 1, overrideQuery = null) {
+    const query = overrideQuery !== null ? overrideQuery : nlSearchInput.value.trim();
+    if (!query) {
+        showAlertModal('입력 필요', '검색할 도서명을 입력해주세요.');
+        return;
+    }
+
+    currentSearchQuery = query;
+    btnNlSearch.disabled = true;
+    btnNlSearch.textContent = '검색 중...';
+
+    fetch(`/api/nl-search?q=${encodeURIComponent(query)}&page=${page}`)
+        .then(res => res.json())
+        .then(data => {
+            nlSearchResults.innerHTML = '';
+
+            if (!data.success) {
+                nlSearchContainer.classList.add('d-none');
+                showAlertModal('도서 검색 오류', data.message);
+                return;
+            }
+
+            nlSearchContainer.classList.remove('d-none');
+
+            if (!data.books || data.books.length === 0) {
+                nlSearchSummary.textContent = '검색 결과 0건';
+                nlSearchResults.innerHTML = '<div class="list-group-item text-muted text-center small py-3">검색 결과가 없습니다.</div>';
+                nlPaginationNav.classList.add('d-none');
+                return;
+            }
+
+            nlSearchSummary.textContent = `총 ${Number(data.total_count).toLocaleString()}건 (${data.page} / ${data.total_pages} 페이지)`;
+
+            data.books.forEach(book => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'list-group-item list-group-item-action d-flex align-items-center gap-3';
+
+                const thumb = document.createElement('img');
+                thumb.referrerPolicy = 'no-referrer';
+                thumb.alt = book.title;
+                thumb.style.width = '42px';
+                thumb.style.height = '58px';
+                thumb.style.objectFit = 'contain';
+                thumb.className = 'rounded border bg-white flex-shrink-0';
+
+                if (book.image_url) {
+                    thumb.onerror = function() {
+                        this.onerror = function() {
+                            this.onerror = null;
+                            this.src = DEFAULT_COVER;
+                        };
+                        this.src = `/api/nl-cover-proxy?url=${encodeURIComponent(book.image_url)}`;
+                    };
+                    thumb.src = book.image_url;
+                } else {
+                    thumb.src = DEFAULT_COVER;
+                }
+
+                const info = document.createElement('div');
+                info.className = 'text-start overflow-hidden';
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'fw-bold text-truncate';
+                titleEl.textContent = book.title;
+
+                const metaEl = document.createElement('small');
+                metaEl.className = 'text-muted d-block text-truncate';
+                const priceText = book.original_price ? ` | 정가: ${Number(book.original_price).toLocaleString()}원` : '';
+                metaEl.textContent = `${book.author || '저자 미상'} | ${book.publisher || '출판사 미상'}${priceText}`;
+
+                info.appendChild(titleEl);
+                info.appendChild(metaEl);
+                item.appendChild(thumb);
+                item.appendChild(info);
+
+                item.addEventListener('click', () => {
+                    document.getElementById('title').value = book.title || '';
+                    document.getElementById('author').value = book.author || '';
+                    document.getElementById('publisher').value = book.publisher || '';
+                    document.getElementById('original_price').value = book.original_price || '';
+
+                    apiCoverUrl = book.image_url || '';
+                    if (apiCoverUrl) {
+                        primarySelection = 'api';
+                    }
+                    syncGalleryUI();
+
+                    nlSearchContainer.classList.add('d-none');
+                });
+
+                nlSearchResults.appendChild(item);
+            });
+
+            renderPagination(data.page, data.total_pages);
+        })
+        .catch(() => {
+            showAlertModal('오류', '국립중앙도서관 도서 검색 중 네트워크 오류가 발생했습니다.');
+        })
+        .finally(() => {
+            btnNlSearch.disabled = false;
+            btnNlSearch.textContent = '도서 검색';
+        });
+}
+
+btnNlSearch.addEventListener('click', () => searchNationalLibrary(1));
+nlSearchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        searchNationalLibrary(1);
+    }
+});
+
+document.getElementById('btnCloseSearch').addEventListener('click', function() {
+    nlSearchContainer.classList.add('d-none');
+});
+
+document.getElementById('btn-ai-eval').addEventListener('click', function() {
+    const btn = this;
+    const title = document.getElementById('title').value.trim();
+    const description = document.getElementById('description').value.trim();
+
+    if (!description && uploadedFiles.length === 0) {
+        showAlertModal('입력 필요', 'AI 상태 평가를 진행하려면 도서 설명을 입력하거나 상태 사진을 첨부해주세요.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('description', description);
+    uploadedFiles.forEach(file => formData.append('images', file));
+
+    btn.disabled = true;
+    btn.textContent = 'AI 상태 분석 중...';
+
+    fetch('/api/ai-eval', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.result) {
+            document.getElementById('ai_evaluated_result').value = data.result;
+            if (data.suggested_grade) {
+                document.getElementById('condition_grade').value = data.suggested_grade;
+            }
+        } else if (data.error) {
+            showAlertModal('AI 평가 오류', data.error);
+        }
+    })
+    .catch(() => showAlertModal('오류', 'AI 평가 요청 중 네트워크 오류가 발생했습니다.'))
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Gemini AI 상태 자동 평가하기';
+    });
+});
+</script>
+{% endblock %}

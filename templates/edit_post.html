@@ -1,0 +1,221 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="card-title mb-4">도서 게시글 수정</h3>
+
+                <form id="editBookForm" action="{{ url_for('edit_post', book_id=book.id) }}" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" id="primary_image_key" name="primary_image_key" value="">
+                    <div id="keepImagesContainer"></div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3 text-center">
+                            <label class="form-label fw-bold d-block">대표 이미지 (썸네일) 미리보기</label>
+                            <div class="d-flex align-items-center justify-content-center bg-light border rounded mx-auto mb-2 p-2"
+                                 style="width: 190px; height: 255px;">
+                                <img id="editCoverPreview"
+                                     src=""
+                                     alt="대표 이미지 미리보기"
+                                     class="rounded shadow-sm"
+                                     style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                            </div>
+                            <small id="editCoverStatus" class="text-muted d-block">사진을 클릭해 대표를 변경하세요.</small>
+                        </div>
+
+                        <div class="col-md-8">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">도서명</label>
+                                    <input type="text" name="title" class="form-control" value="{{ book.title }}" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">저자</label>
+                                    <input type="text" name="author" class="form-control" value="{{ book.author }}" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">출판사</label>
+                                    <input type="text" name="publisher" class="form-control" value="{{ book.publisher or '' }}">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">정가</label>
+                                    <input type="number" name="original_price" class="form-control" value="{{ book.original_price or '' }}">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">판매가</label>
+                                    <input type="number" name="selling_price" class="form-control" value="{{ book.selling_price }}" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">상태 등급</label>
+                                <select name="condition_grade" class="form-select" required>
+                                    <option value="최상" {% if book.condition_grade == '최상' %}selected{% endif %}>최상 (밑줄/훼손 전혀 없음)</option>
+                                    <option value="상" {% if book.condition_grade == '상' %}selected{% endif %}>상 (약간의 필기 있음)</option>
+                                    <option value="중" {% if book.condition_grade == '중' %}selected{% endif %}>중 (필기 및 사용감 다수)</option>
+                                    <option value="하" {% if book.condition_grade == '하' %}selected{% endif %}>하 (본문 훼손/변색 있음)</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">사진 추가 및 대표 이미지 설정</label>
+                                <input type="file" id="editImageInput" name="images" class="form-control" accept="image/*" multiple>
+                                <div id="editImageGallery" class="d-flex flex-wrap gap-2 mt-3 p-2 bg-light border rounded"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">상세 설명</label>
+                        <textarea name="description" class="form-control" rows="4" required>{{ book.description }}</textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('detail', book_id=book.id) }}" class="btn btn-outline-secondary w-50">취소</a>
+                        <button type="submit" class="btn btn-primary w-50 fw-bold">수정 완료</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script id="initialImagesData" type="application/json">
+[
+{% for img in existing_images %}
+    {
+        "filename": {{ img.image_filename | tojson }},
+        "url": {{ url_for('static', filename='uploads/' + img.image_filename) | tojson }},
+        "isPrimary": {{ 1 if img.is_primary == 1 else 0 }}
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+]
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DEFAULT_COVER = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="240">' +
+    '<rect width="180" height="240" fill="#e9ecef"/>' +
+    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6c757d" font-size="14">No Cover</text>' +
+    '</svg>'
+);
+
+const initialRaw = JSON.parse(document.getElementById('initialImagesData').textContent || '[]');
+let existingList = initialRaw.map(item => ({
+    key: `existing:${item.filename}`,
+    filename: item.filename,
+    src: item.url
+}));
+let newFiles = [];
+
+const primaryInit = initialRaw.find(item => item.isPrimary === 1) || initialRaw[0];
+let primaryKey = primaryInit ? `existing:${primaryInit.filename}` : '';
+
+const editCoverPreview = document.getElementById('editCoverPreview');
+const editCoverStatus = document.getElementById('editCoverStatus');
+const editImageGallery = document.getElementById('editImageGallery');
+const editImageInput = document.getElementById('editImageInput');
+const primaryInput = document.getElementById('primary_image_key');
+const keepContainer = document.getElementById('keepImagesContainer');
+
+function renderEditGallery() {
+    const allItems = [
+        ...existingList.map((it, idx) => ({ key: it.key, label: `기존 ${idx + 1}`, src: it.src, type: 'existing', idx })),
+        ...newFiles.map((f, idx) => ({ key: `new_${idx}`, label: `새 사진 ${idx + 1}`, src: URL.createObjectURL(f), type: 'new', idx }))
+    ];
+
+    editImageGallery.innerHTML = '';
+    if (allItems.length === 0) {
+        primaryKey = '';
+        primaryInput.value = '';
+        editCoverPreview.src = DEFAULT_COVER;
+        editCoverStatus.textContent = '등록된 사진이 없습니다.';
+        return;
+    }
+
+    if (!allItems.some(it => it.key === primaryKey)) {
+        primaryKey = allItems[0].key;
+    }
+    primaryInput.value = primaryKey;
+
+    allItems.forEach(item => {
+        const isPrimary = item.key === primaryKey;
+        if (isPrimary) {
+            editCoverPreview.src = item.src;
+            editCoverStatus.textContent = `대표 이미지: ${item.label}`;
+        }
+
+        const card = document.createElement('div');
+        card.className = `position-relative border rounded bg-white p-1 text-center ${isPrimary ? 'border-primary border-2 shadow-sm' : ''}`;
+        card.style.width = '92px';
+        card.style.cursor = 'pointer';
+
+        const img = document.createElement('img');
+        img.src = item.src;
+        img.style.width = '80px';
+        img.style.height = '96px';
+        img.style.objectFit = 'contain';
+        img.className = 'rounded d-block mx-auto';
+
+        const badge = document.createElement('span');
+        badge.className = `badge d-block mt-1 text-truncate ${isPrimary ? 'bg-primary' : 'bg-light text-dark border'}`;
+        badge.style.fontSize = '0.7rem';
+        badge.textContent = isPrimary ? '★ 대표' : item.label;
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-danger btn-sm position-absolute top-0 end-0 p-0 d-flex align-items-center justify-content-center';
+        delBtn.style.width = '20px';
+        delBtn.style.height = '20px';
+        delBtn.style.fontSize = '12px';
+        delBtn.textContent = '×';
+        delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.type === 'existing') existingList.splice(item.idx, 1);
+            else newFiles.splice(item.idx, 1);
+            renderEditGallery();
+        });
+
+        card.addEventListener('click', () => {
+            primaryKey = item.key;
+            renderEditGallery();
+        });
+
+        card.appendChild(delBtn);
+        card.appendChild(img);
+        card.appendChild(badge);
+        editImageGallery.appendChild(card);
+    });
+}
+
+editImageInput.addEventListener('change', function() {
+    if (this.files && this.files.length > 0) {
+        Array.from(this.files).forEach(f => newFiles.push(f));
+        this.value = '';
+        renderEditGallery();
+    }
+});
+
+document.getElementById('editBookForm').addEventListener('submit', function() {
+    keepContainer.innerHTML = '';
+    existingList.forEach(item => {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'keep_images';
+        hidden.value = item.filename;
+        keepContainer.appendChild(hidden);
+    });
+
+    const dt = new DataTransfer();
+    newFiles.forEach(f => dt.items.add(f));
+    editImageInput.files = dt.files;
+});
+
+renderEditGallery();
+</script>
+{% endblock %}

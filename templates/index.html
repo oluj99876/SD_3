@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8 offset-md-2">
+        <form action="{{ url_for('index') }}" method="GET" class="d-flex">
+            <input type="text" name="q" class="form-control me-2" placeholder="도서명, 저자, 출판사 검색..." value="{{ query }}">
+            <button type="submit" class="btn btn-primary text-nowrap">검색</button>
+        </form>
+    </div>
+</div>
+
+<div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
+    {% for book in books %}
+    <div class="col">
+        <div class="card h-100 shadow-sm overflow-hidden">
+            <a href="{{ url_for('detail', book_id=book.id) }}"
+               class="d-flex align-items-center justify-content-center bg-light border-bottom p-3 text-decoration-none"
+               style="height: 280px;">
+                <img src="{{ url_for('static', filename='uploads/' + (book.image_filename or 'default_book.png')) }}"
+                     alt="{{ book.title }}"
+                     class="rounded shadow-sm"
+                     style="max-width: 100%; max-height: 100%; object-fit: contain;"
+                     onerror="this.onerror=null; this.src='https://via.placeholder.com/210x280?text=No+Image';">
+            </a>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="badge bg-secondary">{{ book.condition_grade }}급</span>
+                    {% if book.status == 'AVAILABLE' %}
+                        <span class="badge bg-success">판매중</span>
+                    {% elif book.status == 'RESERVED' %}
+                        <span class="badge bg-warning text-dark">예약중</span>
+                    {% else %}
+                        <span class="badge bg-dark">거래 완료</span>
+                    {% endif %}
+                </div>
+                <h5 class="card-title text-truncate">
+                    <a href="{{ url_for('detail', book_id=book.id) }}" class="text-decoration-none text-dark">{{ book.title }}</a>
+                </h5>
+                <p class="card-text text-muted mb-1 text-truncate">{{ book.author }} | {{ book.publisher or '-' }}</p>
+                <p class="card-text fw-bold text-primary mb-0">{{ "{:,}".format(book.selling_price) }}원</p>
+            </div>
+            <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+                <small class="text-muted text-truncate me-2">
+                    <a href="{{ url_for('user_profile', user_id=book.seller_id) }}" class="text-decoration-none text-dark">
+                        {{ book.name }}({{ book.student_id }})
+                    </a>
+                </small>
+                <a href="{{ url_for('detail', book_id=book.id) }}" class="btn btn-sm btn-outline-primary text-nowrap">상세보기</a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center py-5">
+        <p class="text-muted">등록된 중고 도서가 없습니다.</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
