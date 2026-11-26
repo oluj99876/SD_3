@@ -1041,7 +1041,7 @@ def nl_book_search():
 
     results = []
     total_count = 0
-    nl_timeout = (10, 12)  # (연결 타임아웃 10초, 읽기 타임아웃 12초)
+    nl_timeout = (5, 8)
 
     try:
         seoji_url = 'https://www.nl.go.kr/seoji/SearchApi.do'
@@ -1063,6 +1063,8 @@ def nl_book_search():
                 img_url = str(doc.get('TITLE_URL', '')).strip()
                 if img_url.startswith('http://cover.nl.go.kr'):
                     img_url = img_url.replace('http://', 'https://', 1)
+                elif img_url and not img_url.startswith(('http://', 'https://')):
+                    img_url = f"https://cover.nl.go.kr/{img_url.lstrip('/')}"
 
                 results.append({
                     'title': strip_html(doc.get('TITLE', '')),
@@ -1099,6 +1101,8 @@ def nl_book_search():
                         img_url = f"https://cover.nl.go.kr{img_url}"
                     elif img_url.startswith('http://cover.nl.go.kr'):
                         img_url = img_url.replace('http://', 'https://', 1)
+                    elif img_url and not img_url.startswith(('http://', 'https://')):
+                        img_url = f"https://cover.nl.go.kr/{img_url.lstrip('/')}"
 
                     results.append({
                         'title': strip_html(item.get('titleInfo', '')),
@@ -1146,7 +1150,7 @@ def nl_cover_proxy():
     if not img_url.startswith(('http://cover.nl.go.kr/', 'https://cover.nl.go.kr/')):
         return '', 400
     try:
-        resp = requests.get(img_url, timeout=(8, 10))
+        resp = requests.get(img_url, timeout=(5, 8))
         if resp.status_code == 200 and resp.content:
             return Response(resp.content, mimetype=resp.headers.get('Content-Type', 'image/jpeg'))
     except Exception:
