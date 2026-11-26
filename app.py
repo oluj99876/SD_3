@@ -1057,6 +1057,8 @@ def nl_book_search():
             data = resp.json()
             raw_total = re.sub(r'[^0-9]', '', str(data.get('TOTAL_COUNT', '')))
             total_count = int(raw_total) if raw_total else 0
+        else:
+            app.logger.warning("NL Seoji API 비정상 상태코드: %s", resp.status_code)
 
             for doc in data.get('docs', []):
                 raw_price = re.sub(r'[^0-9]', '', str(doc.get('PRE_PRICE', '')))
