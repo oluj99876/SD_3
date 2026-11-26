@@ -1041,7 +1041,7 @@ def nl_book_search():
 
     results = []
     total_count = 0
-    nl_timeout = (5, 8)
+    nl_timeout = (10, 12)
 
     try:
         seoji_url = 'https://www.nl.go.kr/seoji/SearchApi.do'
@@ -1054,11 +1054,17 @@ def nl_book_search():
         }
         resp = requests.get(seoji_url, params=seoji_params, timeout=nl_timeout)
         if resp.status_code == 200:
-            data = resp.json()
+            try:
+                data = resp.json()
+            except ValueError:
+                app.logger.warning("NL Seoji API 비JSON 응답(원문 일부): %s", mask_sensitive_info(resp.text[:300]))
+                data = {}
+
+            if data and 'docs' not in data:
+                app.logger.warning("NL Seoji API 비정상 JSON 응답: %s", mask_sensitive_info(str(data)[:300]))
+
             raw_total = re.sub(r'[^0-9]', '', str(data.get('TOTAL_COUNT', '')))
             total_count = int(raw_total) if raw_total else 0
-        else:
-            app.logger.warning("NL Seoji API 비정상 상태코드: %s", resp.status_code)
 
             for doc in data.get('docs', []):
                 raw_price = re.sub(r'[^0-9]', '', str(doc.get('PRE_PRICE', '')))
@@ -1075,10 +1081,12 @@ def nl_book_search():
                     'original_price': int(raw_price) if raw_price else '',
                     'image_url': img_url
                 })
+        else:
+            app.logger.warning("NL Seoji API 비정상 상태코드(%s): %s", resp.status_code, mask_sensitive_info(resp.text[:200]))
     except requests.exceptions.RequestException as e:
         app.logger.warning("NL Seoji API 요청 실패: %s", mask_sensitive_info(e))
     except Exception as e:
-        app.logger.warning("NL Seoji API 응답 파싱 실패: %s", mask_sensitive_info(e))
+        app.logger.warning("NL Seoji API 응답 처리 실패: %s", mask_sensitive_info(e))
 
     if not results and page == 1:
         try:
@@ -1093,7 +1101,15 @@ def nl_book_search():
             }
             resp = requests.get(search_url, params=search_params, timeout=nl_timeout)
             if resp.status_code == 200:
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except ValueError:
+                    app.logger.warning("NL Open API 비JSON 응답(원문 일부): %s", mask_sensitive_info(resp.text[:300]))
+                    data = {}
+
+                if data and 'result' not in data:
+                    app.logger.warning("NL Open API 비정상 JSON 응답: %s", mask_sensitive_info(str(data)[:300]))
+
                 raw_total = re.sub(r'[^0-9]', '', str(data.get('total', '')))
                 total_count = int(raw_total) if raw_total else 0
 
@@ -1113,6 +1129,8 @@ def nl_book_search():
                         'original_price': '',
                         'image_url': img_url
                     })
+            else:
+                app.logger.warning("NL Open API 비정상 상태코드(%s): %s", resp.status_code, mask_sensitive_info(resp.text[:200]))
         except requests.exceptions.Timeout as e:
             app.logger.warning("NL Open API Timeout: %s", mask_sensitive_info(e))
             return jsonify({
@@ -1152,7 +1170,7 @@ def nl_cover_proxy():
     if not img_url.startswith(('http://cover.nl.go.kr/', 'https://cover.nl.go.kr/')):
         return '', 400
     try:
-        resp = requests.get(img_url, timeout=(5, 8))
+        resp = requests.get(img_url, timeout=(8, 10))
         if resp.status_code == 200 and resp.content:
             return Response(resp.content, mimetype=resp.headers.get('Content-Type', 'image/jpeg'))
     except Exception:
