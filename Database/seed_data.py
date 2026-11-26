@@ -20,13 +20,24 @@ gemini_client = None
 if GEMINI_API_KEY and GEMINI_API_KEY != 'your_google_gemini_api_key_here':
     gemini_client = genai.Client(
         api_key=GEMINI_API_KEY,
-        http_options=types.HttpOptions(timeout=15000)  # 15초 초과 시 타임아웃 예외 발생
+        http_options=types.HttpOptions(timeout=15000)
     )
 
 GEMINI_MODELS = [
     'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
 ]
+
+
+def mask_sensitive_info(text):
+    if not text:
+        return ''
+    return re.sub(
+        r'((?:cert_key|api_key|key)=)([^&\s\'"\)]+)',
+        r'\1***REDACTED***',
+        str(text),
+        flags=re.IGNORECASE
+    )
 
 
 def normalize_to_rgb(img):
@@ -43,7 +54,6 @@ def normalize_to_rgb(img):
 
 
 def optimize_seed_image(filename):
-    """시드 이미지(1.jpg 등)가 static/uploads에 있으면 1000x1000 WebP로 경량화하여 반환"""
     if not filename or filename == 'default_book.png':
         return filename
 
@@ -69,7 +79,6 @@ def optimize_seed_image(filename):
 
 
 def evaluate_seed_book(title, description, image_filename, fallback_text):
-    """app.py의 /api/ai-eval과 동일한 프롬프트로 시드 도서의 실제 AI 상태 평가를 생성"""
     if not gemini_client:
         return fallback_text
 
@@ -107,8 +116,8 @@ def evaluate_seed_book(title, description, image_filename, fallback_text):
                 time.sleep(1.2)
                 return result_text
             except Exception as e:
+                print(f"   -> 오류 발생 ({model_name}): {mask_sensitive_info(e)}", flush=True)
                 err_str = str(e)
-                print(f"   -> 오류 발생 ({model_name}): {err_str}", flush=True)
                 if '503' in err_str or 'UNAVAILABLE' in err_str or '429' in err_str:
                     time.sleep(1.5)
                     continue
@@ -121,7 +130,6 @@ def insert_seed_data():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 1. 더미 사용자 (학번, 이름, 비밀번호 '1234', 신뢰지수/100점, 관리자여부)
     users = [
         ('20211101', '김철수', generate_password_hash('1234'), 82.5, 0),
         ('20221102', '이영희', generate_password_hash('1234'), 50.0, 0),
@@ -134,9 +142,7 @@ def insert_seed_data():
         users
     )
 
-    # 2. 더미 도서 원본 데이터 (실제 Gemini AI 평가 실행 + 이미지 WebP 경량화)
     raw_books = [
-        # [동일 매물 비교 그룹: 컴퓨터 구조론 5판]
         (
             1, '컴퓨터 구조론 5판', '김종현', '생능출판', 30000, 15000, '상',
             '[추천등급: 상] 필기 흔적이 일부 있으나 전반적으로 깔끔한 상태입니다.',
@@ -155,28 +161,24 @@ def insert_seed_data():
             '복수전공 철회로 교재 구매 후 펼쳐보지도 않은 완전 새 책입니다.',
             '1.jpg', 'AVAILABLE'
         ),
-        # [예약 중 테스트 매물: ID 4]
         (
             1, '파이썬 머신러닝 완벽 가이드 (개정2판)', '권철민', '위키북스', 38000, 24000, '최상',
             '[추천등급: 최상] 구김이나 필기 없이 표지와 내지 모두 매우 깨끗한 상태입니다.',
             '데이터분석 프로젝트 참고용으로 구입했던 책입니다. 상태 아주 좋습니다.',
             '2.jpg', 'RESERVED'
         ),
-        # [판매 완료 + 긍정 리뷰 테스트 매물: ID 5]
         (
             1, 'Operating System Concepts (공룡책 10판)', 'Abraham Silberschatz', '홍릉', 45000, 28000, '상',
             '[추천등급: 상] 표지 모서리에 약간의 사용감이 있으나 본문은 깨끗합니다.',
             '운영체제 강의 수강할 때 사용한 번역서입니다.',
             '3.jpg', 'SOLD'
         ),
-        # [판매 완료 + 부정 리뷰 + 소프트 삭제 테스트 매물: ID 6]
         (
             1, '알고리즘 문제 해결 전략 세트', '구종만', '인사이트', 50000, 25000, '중',
             '[추천등급: 중] 전반적인 사용감이 있으나 본문 내용 확인에는 문제가 없습니다.',
             '알고리즘 학회 활동 때 본 책입니다.',
             '4.jpg', 'DELETED'
         ),
-        # [단일 판매 중 매물: ID 7]
         (
             4, '쉽게 배우는 데이터베이스 개론 3판', '김연희', '한빛아카데미', 29000, 10000, '하',
             '[추천등급: 하] 필기감과 사용 흔적이 많아 저렴한 학습용으로 적합한 상태입니다.',
@@ -215,7 +217,6 @@ def insert_seed_data():
         books
     )
 
-    # 3. 더미 댓글 및 답글 (거래 요청 및 승인 흐름 테스트)
     comments = [
         (1, 2, None, '안녕하세요! 내일 우당관 앞에서 직거래 가능할까요?', 0),
         (1, 3, None, '구매 희망합니다. 오늘 오후에 학교 도서관 앞에서 뵐 수 있을까요?', 0),
@@ -227,7 +228,6 @@ def insert_seed_data():
         comments
     )
 
-    # 4. 더미 거래 내역
     trades = [
         (4, 2, 1, 3, 'RESERVED', None, None),
         (5, 3, 1, None, 'COMPLETED', None, None),
@@ -238,7 +238,6 @@ def insert_seed_data():
         trades
     )
 
-    # 5. 더미 리뷰 데이터
     reviews = [
         (2, 3, 1, 5.0, '약속 시간도 정확히 지켜주시고 책 상태가 설명보다 훨씬 깨끗했습니다!'),
         (3, 4, 1, 2.0, '답장이 조금 늦어서 일정을 다시 잡아야 했습니다.')

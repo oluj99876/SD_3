@@ -43,6 +43,16 @@ def strip_html(text):
         return ''
     return re.sub(r'<[^>]+>', '', str(text)).strip()
 
+def mask_sensitive_info(text):
+    if not text:
+        return ''
+    return re.sub(
+        r'((?:cert_key|api_key|key)=)([^&\s\'"\)]+)',
+        r'\1***REDACTED***',
+        str(text),
+        flags=re.IGNORECASE
+    )
+
 def is_admin_user():
     return bool(g.user and g.user['is_admin'] == 1)
 
@@ -155,7 +165,7 @@ def ensure_database_initialized():
             from Database.seed_data import insert_seed_data
             insert_seed_data()
         except Exception as e:
-            print(f"초기 시드 데이터 자동 삽입 건너뜀: {e}")
+            app.logger.warning("초기 시드 데이터 자동 삽입 건너뜀: %s", mask_sensitive_info(e))
 
 ensure_database_initialized()
 
@@ -1015,7 +1025,7 @@ def admin_dashboard():
     )
 
 # ==========================================
-# 8. 국립중앙도서관 Open API 도서 & 표지 검색
+# 8. 도서 & 표지 검색 API (국립중앙도서관 + 해외 서버용 Google Books 자동 폴백)
 # ==========================================
 @app.route('/api/nl-search', methods=['GET'])
 def nl_book_search():
@@ -1026,76 +1036,99 @@ def nl_book_search():
     if not query:
         return jsonify({'success': False, 'message': '검색할 도서명을 입력해주세요.'}), 400
 
-    if not NL_API_KEY or NL_API_KEY == 'your_national_library_api_key_here':
-        return jsonify({'success': False, 'message': '국립중앙도서관 API 키가 설정되지 않았습니다. (.env 파일을 확인하세요)'}), 500
-
     results = []
     total_count = 0
 
-    try:
-        seoji_url = 'https://www.nl.go.kr/seoji/SearchApi.do'
-        seoji_params = {
-            'cert_key': NL_API_KEY,
-            'result_style': 'json',
-            'page_no': page,
-            'page_size': page_size,
-            'title': query
-        }
-        resp = requests.get(seoji_url, params=seoji_params, timeout=6)
-        if resp.status_code == 200:
-            data = resp.json()
-            raw_total = re.sub(r'[^0-9]', '', str(data.get('TOTAL_COUNT', '')))
-            total_count = int(raw_total) if raw_total else 0
-
-            for doc in data.get('docs', []):
-                raw_price = re.sub(r'[^0-9]', '', str(doc.get('PRE_PRICE', '')))
-                img_url = str(doc.get('TITLE_URL', '')).strip()
-                if img_url.startswith('http://cover.nl.go.kr'):
-                    img_url = img_url.replace('http://', 'https://', 1)
-
-                results.append({
-                    'title': strip_html(doc.get('TITLE', '')),
-                    'author': strip_html(doc.get('AUTHOR', '')),
-                    'publisher': strip_html(doc.get('PUBLISHER', '')),
-                    'original_price': int(raw_price) if raw_price else '',
-                    'image_url': img_url
-                })
-    except Exception:
-        pass
-
-    if not results and page == 1:
+    if NL_API_KEY and NL_API_KEY != 'your_national_library_api_key_here':
         try:
-            search_url = 'https://www.nl.go.kr/NL/search/openApi/search.do'
-            search_params = {
-                'key': NL_API_KEY,
-                'apiType': 'json',
-                'srchTarget': 'total',
-                'kwd': query,
-                'pageNum': page,
-                'pageSize': page_size
+            seoji_url = 'https://www.nl.go.kr/seoji/SearchApi.do'
+            seoji_params = {
+                'cert_key': NL_API_KEY,
+                'result_style': 'json',
+                'page_no': page,
+                'page_size': page_size,
+                'title': query
             }
-            resp = requests.get(search_url, params=search_params, timeout=6)
+            resp = requests.get(seoji_url, params=seoji_params, timeout=3)
             if resp.status_code == 200:
                 data = resp.json()
-                raw_total = re.sub(r'[^0-9]', '', str(data.get('total', '')))
+                raw_total = re.sub(r'[^0-9]', '', str(data.get('TOTAL_COUNT', '')))
                 total_count = int(raw_total) if raw_total else 0
 
-                for item in data.get('result', []):
-                    img_url = str(item.get('imageUrl', '')).strip()
-                    if img_url.startswith('/'):
-                        img_url = f"https://cover.nl.go.kr{img_url}"
-                    elif img_url.startswith('http://cover.nl.go.kr'):
+                for doc in data.get('docs', []):
+                    raw_price = re.sub(r'[^0-9]', '', str(doc.get('PRE_PRICE', '')))
+                    img_url = str(doc.get('TITLE_URL', '')).strip()
+                    if img_url.startswith('http://cover.nl.go.kr'):
                         img_url = img_url.replace('http://', 'https://', 1)
 
                     results.append({
-                        'title': strip_html(item.get('titleInfo', '')),
-                        'author': strip_html(item.get('authorInfo', '')),
-                        'publisher': strip_html(item.get('pubInfo', '')),
-                        'original_price': '',
+                        'title': strip_html(doc.get('TITLE', '')),
+                        'author': strip_html(doc.get('AUTHOR', '')),
+                        'publisher': strip_html(doc.get('PUBLISHER', '')),
+                        'original_price': int(raw_price) if raw_price else '',
                         'image_url': img_url
                     })
+        except requests.exceptions.RequestException as e:
+            app.logger.warning("NL Seoji API 요청 실패(폴백 전환): %s", mask_sensitive_info(e))
         except Exception as e:
-            return jsonify({'success': False, 'message': f'국립중앙도서관 API 호출 중 오류가 발생했습니다: {str(e)}'}), 500
+            app.logger.warning("NL Seoji API 응답 파싱 실패: %s", mask_sensitive_info(e))
+
+    if not results:
+        try:
+            start_index = (page - 1) * page_size
+            gb_url = 'https://www.googleapis.com/books/v1/volumes'
+            gb_params = {
+                'q': query,
+                'startIndex': start_index,
+                'maxResults': page_size,
+                'printType': 'books'
+            }
+            resp = requests.get(gb_url, params=gb_params, timeout=6)
+            if resp.status_code == 200:
+                data = resp.json()
+                total_count = int(data.get('totalItems', 0))
+
+                for item in data.get('items', []):
+                    info = item.get('volumeInfo', {})
+                    sale = item.get('saleInfo', {})
+                    authors = ', '.join(info.get('authors', []))
+                    image_links = info.get('imageLinks', {})
+                    img_url = (
+                        image_links.get('thumbnail')
+                        or image_links.get('smallThumbnail')
+                        or ''
+                    )
+                    if img_url.startswith('http://'):
+                        img_url = img_url.replace('http://', 'https://', 1)
+
+                    list_price = sale.get('listPrice', {}).get('amount')
+                    original_price = int(list_price) if isinstance(list_price, (int, float)) else ''
+
+                    results.append({
+                        'title': strip_html(info.get('title', '')),
+                        'author': strip_html(authors),
+                        'publisher': strip_html(info.get('publisher', '')),
+                        'original_price': original_price,
+                        'image_url': img_url
+                    })
+        except requests.exceptions.Timeout as e:
+            app.logger.warning("Book Search API Timeout: %s", mask_sensitive_info(e))
+            return jsonify({
+                'success': False,
+                'message': '도서 검색 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도하거나 도서 정보를 직접 입력해주세요.'
+            }), 504
+        except requests.exceptions.RequestException as e:
+            app.logger.error("Book Search API Request Error: %s", mask_sensitive_info(e))
+            return jsonify({
+                'success': False,
+                'message': '도서 정보를 불러오는 중 일시적인 네트워크 오류가 발생했습니다. 도서 정보를 직접 입력해주세요.'
+            }), 502
+        except Exception as e:
+            app.logger.error("Book Search API Unexpected Error: %s", mask_sensitive_info(e))
+            return jsonify({
+                'success': False,
+                'message': '도서 검색 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+            }), 500
 
     if total_count == 0 and results:
         total_count = len(results)
@@ -1114,7 +1147,14 @@ def nl_book_search():
 @app.route('/api/nl-cover-proxy')
 def nl_cover_proxy():
     img_url = request.args.get('url', '').strip()
-    if not img_url.startswith(('http://cover.nl.go.kr/', 'https://cover.nl.go.kr/')):
+    allowed_prefixes = (
+        'http://cover.nl.go.kr/',
+        'https://cover.nl.go.kr/',
+        'http://books.google.com/',
+        'https://books.google.com/',
+        'https://books.googleusercontent.com/',
+    )
+    if not img_url.startswith(allowed_prefixes):
         return '', 400
     try:
         resp = requests.get(img_url, timeout=5)
@@ -1130,7 +1170,7 @@ def nl_cover_proxy():
 @app.route('/api/ai-eval', methods=['POST'])
 def ai_eval():
     if not gemini_client:
-        return jsonify({'error': 'Gemini API Key가 설정되지 않았습니다. (.env 파일을 확인하세요)'}), 500
+        return jsonify({'error': 'AI 상태 평가 기능이 현재 비활성화되어 있습니다. 상태 설명을 직접 작성해주세요.'}), 500
 
     if request.content_type and 'multipart/form-data' in request.content_type:
         title = request.form.get('title', '').strip()
@@ -1175,7 +1215,8 @@ def ai_eval():
             'suggested_grade': detected_grade
         })
     except Exception as e:
-        return jsonify({'error': f'AI 평가 중 오류가 발생했습니다: {str(e)}'}), 500
+        app.logger.error("Gemini AI Eval Error: %s", mask_sensitive_info(e))
+        return jsonify({'error': 'AI 상태 평가 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}), 500
 
 # ==========================================
 # 9-2. 구매자용: 상세 페이지 동일 도서 상품 비교 분석 API
@@ -1183,7 +1224,7 @@ def ai_eval():
 @app.route('/api/book/<int:book_id>/ai-compare', methods=['POST'])
 def ai_compare_book(book_id):
     if not gemini_client:
-        return jsonify({'error': 'Gemini API Key가 설정되지 않았습니다. (.env 파일을 확인하세요)'}), 500
+        return jsonify({'error': 'AI 비교 분석 기능이 현재 비활성화되어 있습니다.'}), 500
 
     db = get_db()
     cursor = db.cursor()
@@ -1244,7 +1285,8 @@ def ai_compare_book(book_id):
         result_text = generate_gemini_response([prompt])
         return jsonify({'result': result_text})
     except Exception as e:
-        return jsonify({'error': f'AI 상품 비교 분석 중 오류가 발생했습니다: {str(e)}'}), 500
+        app.logger.error("Gemini AI Compare Error: %s", mask_sensitive_info(e))
+        return jsonify({'error': 'AI 상품 비교 분석 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}), 500
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
