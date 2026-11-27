@@ -1,322 +1,378 @@
 {% extends 'base.html' %}
 
+{% block title %}통합 관리 대시보드 - 캠퍼스 중고 전공서적 거래{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h3 class="fw-bold mb-0">통합 관리</h3>
-    <div class="text-muted small">
-        회원 {{ users|length }}명 · 게시글 {{ books|length }}건 · 거래 {{ trades|length }}건 · 댓글 {{ comments|length }}건
-    </div>
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+  <div>
+    <h3 class="fw-bold mb-1">통합 관리 대시보드</h3>
+    <p class="text-muted small mb-0">회원 계정 상태(활동·탈퇴), 도서 게시글, 거래 내역 및 댓글을 통합 관리합니다.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <span class="badge bg-dark py-2 px-3">전체 회원 {{ users|length }}명</span>
+    <span class="badge bg-primary py-2 px-3">전체 게시글 {{ books|length }}건</span>
+    <span class="badge bg-success py-2 px-3">전체 거래 {{ trades|length }}건</span>
+  </div>
 </div>
 
+<!-- 관리 탭 메뉴 -->
 <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
-    <li class="nav-item" role="presentation">
-        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-books" type="button">도서 게시글 관리</button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-trades" type="button">예약 · 거래 관리</button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-comments" type="button">댓글 · 답글 관리</button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-users" type="button">회원 목록</button>
-    </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active fw-bold" id="users-tab" data-bs-toggle="tab" data-bs-target="#users-pane" type="button" role="tab">
+      회원 관리 ({{ users|length }})
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link fw-bold" id="books-tab" data-bs-toggle="tab" data-bs-target="#books-pane" type="button" role="tab">
+      게시글 관리 ({{ books|length }})
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link fw-bold" id="trades-tab" data-bs-toggle="tab" data-bs-target="#trades-pane" type="button" role="tab">
+      거래 관리 ({{ trades|length }})
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link fw-bold" id="comments-tab" data-bs-toggle="tab" data-bs-target="#comments-pane" type="button" role="tab">
+      댓글 관리 ({{ comments|length }})
+    </button>
+  </li>
 </ul>
 
-<div class="tab-content">
-    <!-- 1. 도서 게시글 관리 -->
-    <div class="tab-pane fade show active" id="tab-books">
-        <div class="card shadow-sm">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>ID</th>
-                            <th>도서명</th>
-                            <th>판매자</th>
-                            <th>판매가</th>
-                            <th>상태 변경</th>
-                            <th class="text-end">관리</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for b in books %}
-                        <tr>
-                            <td>{{ b.id }}</td>
-                            <td>
-                                {% if b.status != 'DELETED' %}
-                                    <a href="{{ url_for('detail', book_id=b.id) }}" class="fw-bold text-decoration-none">{{ b.title }}</a>
-                                {% else %}
-                                    <span class="text-muted text-decoration-line-through">{{ b.title }}</span>
-                                    <span class="badge bg-danger ms-1">삭제됨</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ b.seller_name }} ({{ b.seller_student_id }})</td>
-                            <td>{{ "{:,}".format(b.selling_price) }}원</td>
-                            <td>
-                                {% if b.status != 'DELETED' %}
-                                <select class="form-select form-select-sm admin-book-status" style="width: 120px;" data-book-id="{{ b.id }}">
-                                    <option value="AVAILABLE" {% if b.status == 'AVAILABLE' %}selected{% endif %}>판매중</option>
-                                    <option value="RESERVED" {% if b.status == 'RESERVED' %}selected{% endif %}>예약중</option>
-                                    <option value="SOLD" {% if b.status == 'SOLD' %}selected{% endif %}>거래완료</option>
-                                </select>
-                                {% else %}
-                                <span class="text-muted small">DELETED</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-end">
-                                {% if b.status != 'DELETED' %}
-                                    <a href="{{ url_for('edit_post', book_id=b.id) }}" class="btn btn-sm btn-outline-primary">수정</a>
-                                    <button type="button" class="btn btn-sm btn-outline-danger btn-admin-delete-book" data-book-id="{{ b.id }}">삭제</button>
-                                {% else %}
-                                    <button type="button" class="btn btn-sm btn-outline-success btn-admin-restore-book" data-book-id="{{ b.id }}">복구</button>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+<div class="tab-content" id="adminTabsContent">
+  <!-- 1. 회원 관리 탭 -->
+  <div class="tab-pane fade show active" id="users-pane" role="tabpanel">
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>학번</th>
+              <th>이름</th>
+              <th>학과</th>
+              <th>전화번호</th>
+              <th>신뢰지수</th>
+              <th>상태 / 권한</th>
+              <th>가입일</th>
+              <th class="text-end">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+              <tr class="{% if u['is_deleted'] == 1 %}table-secondary text-muted{% endif %}">
+                <td>{{ u['id'] }}</td>
+                <td class="fw-semibold">{{ u['student_id'] }}</td>
+                <td>
+                  <a href="{{ url_for('user_profile', user_id=u['id']) }}" class="text-decoration-none fw-semibold">
+                    {{ u['name'] }}
+                  </a>
+                </td>
+                <td>{{ u['department'] or '-' }}</td>
+                <td>{{ u['phone'] or '-' }}</td>
+                <td>{{ '%.1f'|format(u['trust_score']) }}점</td>
+                <td>
+                  {% if u['is_deleted'] == 1 %}
+                    <span class="badge bg-danger">탈퇴</span>
+                  {% else %}
+                    <span class="badge bg-success">활동 중</span>
+                  {% endif %}
+                  {% if u['is_admin'] == 1 %}
+                    <span class="badge bg-dark ms-1">관리자</span>
+                  {% endif %}
+                </td>
+                <td class="small">{{ u['created_at'][:10] if u['created_at'] else '-' }}</td>
+                <td class="text-end">
+                  <div class="btn-group btn-group-sm">
+                    <a href="{{ url_for('user_profile', user_id=u['id'], tab='edit') }}" class="btn btn-outline-secondary">
+                      정보 수정
+                    </a>
+                    {% if u['student_id'] != 'admin' %}
+                      {% if u['is_deleted'] == 0 %}
+                        <button type="button" class="btn btn-outline-danger"
+                                data-user-id="{{ u['id'] }}"
+                                data-user-name="{{ u['name'] }}"
+                                onclick="withdrawUserByAdmin(this)">
+                          탈퇴 처리
+                        </button>
+                      {% else %}
+                        <button type="button" class="btn btn-outline-primary"
+                                data-user-id="{{ u['id'] }}"
+                                data-user-name="{{ u['name'] }}"
+                                onclick="restoreUserByAdmin(this)">
+                          계정 복구
+                        </button>
+                      {% endif %}
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
 
-    <!-- 2. 예약 · 거래 관리 -->
-    <div class="tab-pane fade" id="tab-trades">
-        <div class="card shadow-sm">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>거래 ID</th>
-                            <th>도서명</th>
-                            <th>판매자</th>
-                            <th>구매자</th>
-                            <th>상태</th>
-                            <th class="text-end">예약 · 거래 제어</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for t in trades %}
-                        <tr>
-                            <td>{{ t.id }}</td>
-                            <td>
-                                <a href="{{ url_for('detail', book_id=t.book_id) }}" class="text-decoration-none fw-semibold">{{ t.book_title }}</a>
-                            </td>
-                            <td>{{ t.seller_name }} ({{ t.seller_student_id }})</td>
-                            <td>{{ t.buyer_name }} ({{ t.buyer_student_id }})</td>
-                            <td>
-                                {% if t.status == 'RESERVED' %}
-                                    <span class="badge bg-warning text-dark">예약중</span>
-                                {% elif t.status == 'COMPLETED' %}
-                                    <span class="badge bg-success">거래완료</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">취소됨</span>
-                                    {% if t.cancel_reason %}<small class="text-muted d-block">{{ t.cancel_reason }}</small>{% endif %}
-                                {% endif %}
-                            </td>
-                            <td class="text-end">
-                                {% if t.status == 'RESERVED' %}
-                                    <button type="button" class="btn btn-sm btn-success btn-admin-complete-trade" data-trade-id="{{ t.id }}">거래 완료</button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger btn-admin-cancel-trade" data-trade-id="{{ t.id }}">예약 취소</button>
-                                {% elif t.status == 'COMPLETED' and not t.review_id %}
-                                    <button type="button" class="btn btn-sm btn-outline-primary btn-admin-submit-review" data-trade-id="{{ t.id }}">후기 등록</button>
-                                {% elif t.review_id %}
-                                    <span class="text-muted small">후기 완료</span>
-                                {% else %}
-                                    <span class="text-muted small">-</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+  <!-- 2. 게시글 관리 탭 -->
+  <div class="tab-pane fade" id="books-pane" role="tabpanel">
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>도서명</th>
+              <th>판매자</th>
+              <th>판매가</th>
+              <th>등급</th>
+              <th>상태</th>
+              <th class="text-end">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in books %}
+              <tr class="{% if b['status'] == 'DELETED' %}table-secondary text-muted{% endif %}">
+                <td>{{ b['id'] }}</td>
+                <td>
+                  {% if b['status'] != 'DELETED' %}
+                    <a href="{{ url_for('detail', book_id=b['id']) }}" class="text-decoration-none fw-semibold">
+                      {{ b['title'] }}
+                    </a>
+                  {% else %}
+                    <span>{{ b['title'] }}</span>
+                  {% endif %}
+                </td>
+                <td>{{ b['seller_name'] }} ({{ b['seller_student_id'] }})</td>
+                <td>{{ '{:,}'.format(b['selling_price']) }}원</td>
+                <td>{{ b['condition_grade'] }}</td>
+                <td>
+                  {% if b['status'] == 'AVAILABLE' %}
+                    <span class="badge bg-primary">판매중</span>
+                  {% elif b['status'] == 'RESERVED' %}
+                    <span class="badge bg-warning text-dark">예약중</span>
+                  {% elif b['status'] == 'SOLD' %}
+                    <span class="badge bg-success">판매완료</span>
+                  {% else %}
+                    <span class="badge bg-danger">삭제됨</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <div class="btn-group btn-group-sm">
+                    {% if b['status'] != 'DELETED' %}
+                      <a href="{{ url_for('edit_post', book_id=b['id']) }}" class="btn btn-outline-secondary">수정</a>
+                      <button type="button" class="btn btn-outline-danger"
+                              data-book-id="{{ b['id'] }}"
+                              onclick="deleteBookByAdmin(this)">
+                        삭제
+                      </button>
+                    {% else %}
+                      <button type="button" class="btn btn-outline-primary"
+                              data-book-id="{{ b['id'] }}"
+                              onclick="restoreBookByAdmin(this)">
+                        복구
+                      </button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
 
-    <!-- 3. 댓글 · 답글 관리 -->
-    <div class="tab-pane fade" id="tab-comments">
-        <div class="card shadow-sm">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>ID</th>
-                            <th>도서명</th>
-                            <th>구분</th>
-                            <th>작성자</th>
-                            <th>내용</th>
-                            <th class="text-end">관리</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for c in comments %}
-                        <tr>
-                            <td>{{ c.id }}</td>
-                            <td>
-                                <a href="{{ url_for('detail', book_id=c.book_id) }}" class="text-decoration-none">{{ c.book_title }}</a>
-                            </td>
-                            <td>
-                                {% if c.parent_id %}
-                                    <span class="badge bg-light text-dark border">답글</span>
-                                {% else %}
-                                    <span class="badge bg-primary">댓글</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ c.author_name }} ({{ c.author_student_id }})</td>
-                            <td>{{ c.content }}</td>
-                            <td class="text-end">
-                                <button type="button" class="btn btn-sm btn-outline-danger btn-admin-delete-comment" data-comment-id="{{ c.id }}">삭제</button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+  <!-- 3. 거래 관리 탭 -->
+  <div class="tab-pane fade" id="trades-pane" role="tabpanel">
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>도서명</th>
+              <th>구매자</th>
+              <th>판매자</th>
+              <th>상태</th>
+              <th>비고 / 취소 사유</th>
+              <th class="text-end">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in trades %}
+              <tr>
+                <td>{{ t['id'] }}</td>
+                <td class="fw-semibold">{{ t['book_title'] }}</td>
+                <td>{{ t['buyer_name'] }} ({{ t['buyer_student_id'] }})</td>
+                <td>{{ t['seller_name'] }} ({{ t['seller_student_id'] }})</td>
+                <td>
+                  {% if t['status'] == 'RESERVED' %}
+                    <span class="badge bg-warning text-dark">예약중</span>
+                  {% elif t['status'] == 'COMPLETED' %}
+                    <span class="badge bg-success">거래완료</span>
+                  {% else %}
+                    <span class="badge bg-secondary">취소됨</span>
+                  {% endif %}
+                </td>
+                <td class="small text-muted">
+                  {% if t['cancel_reason'] %}
+                    [{{ t['cancelled_by'] or '시스템' }}] {{ t['cancel_reason'] }}
+                  {% elif t['review_id'] %}
+                    후기 등록 완료
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if t['status'] == 'RESERVED' %}
+                    <div class="btn-group btn-group-sm">
+                      <button type="button" class="btn btn-outline-success"
+                              data-trade-id="{{ t['id'] }}"
+                              onclick="completeTradeByAdmin(this)">
+                        완료 처리
+                      </button>
+                      <button type="button" class="btn btn-outline-danger"
+                              data-trade-id="{{ t['id'] }}"
+                              onclick="cancelTradeByAdmin(this)">
+                        예약 취소
+                      </button>
+                    </div>
+                  {% else %}
+                    <span class="text-muted small">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
 
-    <!-- 4. 회원 목록 -->
-    <div class="tab-pane fade" id="tab-users">
-        <div class="card shadow-sm">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>ID</th>
-                            <th>학번</th>
-                            <th>이름</th>
-                            <th>신뢰 지수</th>
-                            <th>가입일</th>
-                            <th class="text-end">프로필</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for u in users %}
-                        <tr>
-                            <td>{{ u.id }}</td>
-                            <td>{{ u.student_id }}</td>
-                            <td>{{ u.name }}</td>
-                            <td><span class="badge bg-light text-dark border">{{ u.trust_score }}점</span></td>
-                            <td>{{ u.created_at }}</td>
-                            <td class="text-end">
-                                <a href="{{ url_for('user_profile', user_id=u.id) }}" class="btn btn-sm btn-outline-secondary">상세 보기</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+  <!-- 4. 댓글 관리 탭 -->
+  <div class="tab-pane fade" id="comments-pane" role="tabpanel">
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>도서명</th>
+              <th>작성자</th>
+              <th>구분</th>
+              <th>내용</th>
+              <th class="text-end">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in comments %}
+              <tr>
+                <td>{{ c['id'] }}</td>
+                <td>{{ c['book_title'] }}</td>
+                <td>{{ c['author_name'] }} ({{ c['author_student_id'] }})</td>
+                <td>
+                  {% if c['parent_id'] %}
+                    <span class="badge bg-info text-dark">승인 답글</span>
+                  {% elif c['is_approved'] == 1 %}
+                    <span class="badge bg-success">승인된 요청</span>
+                  {% else %}
+                    <span class="badge bg-light text-dark border">일반 요청</span>
+                  {% endif %}
+                </td>
+                <td class="small">{{ c['content'] }}</td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-sm btn-outline-danger"
+                          data-comment-id="{{ c['id'] }}"
+                          onclick="deleteCommentByAdmin(this)">
+                    삭제
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
 <script>
-document.querySelectorAll('.admin-book-status').forEach(select => {
-    select.addEventListener('change', function() {
-        const bookId = this.dataset.bookId;
-        const status = this.value;
-        fetch(`/api/book/${bookId}/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: status })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+async function withdrawUserByAdmin(btn) {
+  const userId = btn.dataset.userId;
+  const userName = btn.dataset.userName;
+  if (!confirm(`${userName} 회원을 탈퇴 처리하시겠습니까?\n진행 중인 예약 거래는 자동 취소되고 판매 중 게시글은 비노출 처리됩니다.`)) return;
 
-document.querySelectorAll('.btn-admin-delete-book').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const bookId = this.dataset.bookId;
-        showConfirmModal('게시글 삭제', '이 게시글을 삭제하시겠습니까?', function() {
-            fetch(`/api/book/${bookId}/delete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(res => res.json()).then(data => {
-                if (data.success) location.reload();
-                else showAlertModal('오류', data.message);
-            });
-        });
-    });
-});
+  const res = await fetch(`/api/user/${userId}/withdraw`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
 
-document.querySelectorAll('.btn-admin-restore-book').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const bookId = this.dataset.bookId;
-        fetch(`/api/book/${bookId}/restore`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+async function restoreUserByAdmin(btn) {
+  const userId = btn.dataset.userId;
+  const userName = btn.dataset.userName;
+  if (!confirm(`${userName} 회원의 계정을 정상 상태로 복구하시겠습니까?`)) return;
 
-document.querySelectorAll('.btn-admin-complete-trade').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const tradeId = this.dataset.tradeId;
-        showConfirmModal('거래 완료', '이 거래를 완료 처리하시겠습니까?', function() {
-            fetch(`/api/trade/${tradeId}/complete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(res => res.json()).then(data => {
-                if (data.success) location.reload();
-                else showAlertModal('오류', data.message);
-            });
-        });
-    });
-});
+  const res = await fetch(`/api/user/${userId}/restore`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
 
-document.querySelectorAll('.btn-admin-cancel-trade').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const tradeId = this.dataset.tradeId;
-        const reason = prompt('예약 취소 사유를 입력하세요:', '예약 취소 처리');
-        if (reason === null || !reason.trim()) return;
-        fetch(`/api/trade/${tradeId}/cancel`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cancel_reason: reason.trim() })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+async function deleteBookByAdmin(btn) {
+  const bookId = btn.dataset.bookId;
+  if (!confirm('해당 게시글을 삭제 처리하시겠습니까?')) return;
 
-document.querySelectorAll('.btn-admin-submit-review').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const tradeId = this.dataset.tradeId;
-        const comment = prompt('등록할 거래 후기 내용을 입력하세요:', '친절하고 빠른 거래였습니다.');
-        if (comment === null || !comment.trim()) return;
-        fetch(`/api/trade/${tradeId}/review`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating: 5.0, comment: comment.trim() })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+  const res = await fetch(`/api/book/${bookId}/delete`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
 
-document.querySelectorAll('.btn-admin-delete-comment').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const commentId = this.dataset.commentId;
-        showConfirmModal('댓글 삭제', '이 댓글을 삭제하시겠습니까?', function() {
-            fetch(`/api/comment/${commentId}/delete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(res => res.json()).then(data => {
-                if (data.success) location.reload();
-                else showAlertModal('오류', data.message);
-            });
-        });
-    });
-});
+async function restoreBookByAdmin(btn) {
+  const bookId = btn.dataset.bookId;
+  if (!confirm('삭제된 게시글을 판매중 상태로 복구하시겠습니까?')) return;
+
+  const res = await fetch(`/api/book/${bookId}/restore`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
+
+async function completeTradeByAdmin(btn) {
+  const tradeId = btn.dataset.tradeId;
+  if (!confirm('해당 거래를 완료 처리하시겠습니까?')) return;
+
+  const res = await fetch(`/api/trade/${tradeId}/complete`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
+
+async function cancelTradeByAdmin(btn) {
+  const tradeId = btn.dataset.tradeId;
+  const reason = prompt('관리자 직권 예약 취소 사유를 입력하세요:', '관리자 직권 취소');
+  if (!reason || !reason.trim()) return;
+
+  const res = await fetch(`/api/trade/${tradeId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cancel_reason: reason.trim() })
+  });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
+
+async function deleteCommentByAdmin(btn) {
+  const commentId = btn.dataset.commentId;
+  if (!confirm('해당 댓글을 삭제하시겠습니까?')) return;
+
+  const res = await fetch(`/api/comment/${commentId}/delete`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
 </script>
 {% endblock %}

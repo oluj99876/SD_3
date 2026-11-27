@@ -7,15 +7,20 @@ DROP TABLE IF EXISTS users;
 
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id TEXT NOT NULL UNIQUE,
+    student_id TEXT NOT NULL,
     name TEXT NOT NULL,
     department TEXT NOT NULL DEFAULT '소프트웨어학과',
     phone TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
     trust_score REAL NOT NULL DEFAULT 50.0,
     is_admin INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX idx_users_active_student_id
+ON users(student_id)
+WHERE is_deleted = 0;
 
 CREATE TABLE books (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

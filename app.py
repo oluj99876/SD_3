@@ -35,13 +35,16 @@ NL_API_KEY = os.environ.get('NL_API_KEY')
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 def strip_html(text):
     if not text:
         return ''
     return re.sub(r'<[^>]+>', '', str(text)).strip()
+
 
 def mask_sensitive_info(text):
     if not text:
@@ -53,8 +56,10 @@ def mask_sensitive_info(text):
         flags=re.IGNORECASE
     )
 
+
 def is_admin_user():
     return bool(g.user and g.user['is_admin'] == 1)
+
 
 def normalize_to_rgb(img):
     img = ImageOps.exif_transpose(img)
@@ -68,6 +73,7 @@ def normalize_to_rgb(img):
         return img.convert('RGB')
     return img
 
+
 def save_optimized_image(file_storage, upload_folder, max_size=(1000, 1000), quality=82):
     os.makedirs(upload_folder, exist_ok=True)
     img = Image.open(file_storage.stream)
@@ -79,11 +85,13 @@ def save_optimized_image(file_storage, upload_folder, max_size=(1000, 1000), qua
     img.save(save_path, format='WEBP', quality=quality, method=6)
     return filename
 
+
 def prepare_ai_image(file_storage, max_size=(800, 800)):
     img = Image.open(file_storage.stream)
     img = normalize_to_rgb(img)
     img.thumbnail(max_size, Image.Resampling.LANCZOS)
     return img
+
 
 def generate_gemini_response(contents):
     last_error = None
@@ -104,6 +112,7 @@ def generate_gemini_response(contents):
                 break
     raise last_error
 
+
 def download_cover_image(image_url, upload_folder):
     if not image_url or not image_url.startswith(('http://', 'https://')):
         return None
@@ -122,11 +131,13 @@ def download_cover_image(image_url, upload_folder):
         return None
     return None
 
+
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(app.config['DATABASE'])
         g.db.row_factory = sqlite3.Row
     return g.db
+
 
 def ensure_database_initialized():
     os.makedirs(os.path.dirname(app.config['DATABASE']), exist_ok=True)
@@ -155,13 +166,16 @@ def ensure_database_initialized():
         except Exception as e:
             app.logger.warning("초기 시드 데이터 자동 삽입 건너뜀: %s", mask_sensitive_info(e))
 
+
 ensure_database_initialized()
+
 
 @app.teardown_appcontext
 def close_db(exception):
     db = g.pop('db', None)
     if db is not None:
         db.close()
+
 
 @app.before_request
 def load_logged_in_user():
@@ -171,10 +185,16 @@ def load_logged_in_user():
     else:
         cursor = get_db().cursor()
         cursor.execute(
-            "SELECT id, student_id, name, department, phone, trust_score, is_admin FROM users WHERE id = ?",
+            "SELECT id, student_id, name, department, phone, trust_score, is_admin, is_deleted FROM users WHERE id = ?",
             (user_id,)
         )
-        g.user = cursor.fetchone()
+        user = cursor.fetchone()
+        if user is None or user['is_deleted'] == 1:
+            session.clear()
+            g.user = None
+        else:
+            g.user = user
+
 
 # ==========================================
 # 1. 메인 & 검색
@@ -209,6 +229,7 @@ def index():
     books = cursor.fetchall()
     return render_template('index.html', books=books, query=query)
 
+
 # ==========================================
 # 2. 인증 (회원가입 / 로그인 / 로그아웃)
 # ==========================================
@@ -223,7 +244,7 @@ def register():
 
         db = get_db()
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE student_id = ?", (student_id,))
+        cursor.execute("SELECT id FROM users WHERE student_id = ? AND is_deleted = 0", (student_id,))
         if cursor.fetchone() is not None:
             flash('이미 등록된 학번입니다.', 'danger')
             return redirect(url_for('register'))
@@ -240,6 +261,7 @@ def register():
 
     return render_template('register.html')
 
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -248,8 +270,15 @@ def login():
 
         db = get_db()
         cursor = db.cursor()
-        cursor.execute("SELECT * FROM users WHERE student_id = ?", (student_id,))
+        cursor.execute(
+            "SELECT * FROM users WHERE student_id = ? ORDER BY is_deleted ASC, id DESC LIMIT 1",
+            (student_id,)
+        )
         user = cursor.fetchone()
+
+        if user and user['is_deleted'] == 1:
+            flash('탈퇴 처리된 계정입니다. 다시 이용하려면 회원가입을 진행해주세요.', 'warning')
+            return redirect(url_for('login'))
 
         if user and check_password_hash(user['password_hash'], password):
             session.clear()
@@ -263,15 +292,59 @@ def login():
 
     return render_template('login.html')
 
+
 @app.route('/logout')
 def logout():
     session.clear()
     flash('로그아웃되었습니다.', 'info')
     return redirect(url_for('index'))
 
+
 # ==========================================
-# 3. 마이페이지 & 공개 프로필 & 회원 정보 수정
+# 3. 마이페이지 & 공개 프로필 & 회원 정보 수정 / 탈퇴
 # ==========================================
+def execute_user_withdrawal(db, target_user, by_admin=False):
+    cursor = db.cursor()
+    user_id = target_user['id']
+
+    if target_user['student_id'] == 'admin':
+        return False, '기본 관리자 계정은 탈퇴 처리할 수 없습니다.'
+
+    if target_user['is_deleted'] == 1:
+        return False, '이미 탈퇴 처리된 회원입니다.'
+
+    cursor.execute(
+        """SELECT * FROM trades
+           WHERE (buyer_id = ? OR seller_id = ?) AND status = 'RESERVED'""",
+        (user_id, user_id)
+    )
+    reserved_trades = cursor.fetchall()
+
+    if reserved_trades and not by_admin:
+        return False, '예약 진행 중인 거래가 있어 탈퇴할 수 없습니다. 먼저 예약을 완료하거나 취소해주세요.'
+
+    if reserved_trades and by_admin:
+        for tr in reserved_trades:
+            cursor.execute(
+                """UPDATE trades
+                   SET status = 'CANCELLED', cancel_reason = '관리자 회원 탈퇴 처리로 인한 예약 취소', cancelled_by = 'ADMIN'
+                   WHERE id = ?""",
+                (tr['id'],)
+            )
+            cursor.execute("UPDATE books SET status = 'AVAILABLE' WHERE id = ?", (tr['book_id'],))
+            if tr['comment_id']:
+                cursor.execute("UPDATE comments SET is_approved = 0 WHERE id = ?", (tr['comment_id'],))
+                cursor.execute("DELETE FROM comments WHERE parent_id = ?", (tr['comment_id'],))
+
+    cursor.execute(
+        "UPDATE books SET status = 'DELETED' WHERE seller_id = ? AND status = 'AVAILABLE'",
+        (user_id,)
+    )
+    cursor.execute("UPDATE users SET is_deleted = 1 WHERE id = ?", (user_id,))
+    db.commit()
+    return True, '회원 탈퇴 처리가 완료되었습니다.'
+
+
 @app.route('/profile')
 def my_profile():
     if not g.user:
@@ -279,18 +352,23 @@ def my_profile():
         return redirect(url_for('login'))
     return redirect(url_for('user_profile', user_id=g.user['id'], tab=request.args.get('tab', 'purchases')))
 
+
 @app.route('/profile/<int:user_id>')
 def user_profile(user_id):
     db = get_db()
     cursor = db.cursor()
 
     cursor.execute(
-        "SELECT id, student_id, name, department, phone, trust_score, is_admin, created_at FROM users WHERE id = ?",
+        "SELECT id, student_id, name, department, phone, trust_score, is_admin, is_deleted, created_at FROM users WHERE id = ?",
         (user_id,)
     )
     target_user = cursor.fetchone()
     if not target_user:
         flash('존재하지 않는 사용자입니다.', 'danger')
+        return redirect(url_for('index'))
+
+    if target_user['is_deleted'] == 1 and not is_admin_user():
+        flash('탈퇴한 사용자입니다.', 'warning')
         return redirect(url_for('index'))
 
     is_owner = bool(g.user and g.user['id'] == target_user['id'])
@@ -387,6 +465,7 @@ def user_profile(user_id):
         book_requests_map=book_requests_map
     )
 
+
 @app.route('/profile/<int:user_id>/edit', methods=['POST'])
 def edit_profile(user_id):
     if not g.user:
@@ -439,6 +518,46 @@ def edit_profile(user_id):
 
     flash('회원 정보가 성공적으로 수정되었습니다.', 'success')
     return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+
+
+@app.route('/profile/<int:user_id>/withdraw', methods=['POST'])
+def withdraw_account(user_id):
+    if not g.user:
+        flash('로그인이 필요합니다.', 'warning')
+        return redirect(url_for('login'))
+
+    is_self = (g.user['id'] == user_id)
+    if not is_self and not is_admin_user():
+        flash('회원 탈퇴 권한이 없습니다.', 'danger')
+        return redirect(url_for('index'))
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    target_user = cursor.fetchone()
+    if not target_user:
+        flash('존재하지 않는 사용자입니다.', 'danger')
+        return redirect(url_for('index'))
+
+    if is_self:
+        withdraw_password = request.form.get('withdraw_password', '')
+        if not check_password_hash(target_user['password_hash'], withdraw_password):
+            flash('비밀번호가 일치하지 않아 탈퇴할 수 없습니다.', 'danger')
+            return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+
+    success, message = execute_user_withdrawal(db, target_user, by_admin=(not is_self and is_admin_user()))
+    if not success:
+        flash(message, 'danger')
+        return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+
+    if is_self:
+        session.clear()
+        flash('회원 탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.', 'info')
+        return redirect(url_for('index'))
+
+    flash(f"{target_user['name']}({target_user['student_id']}) 회원이 탈퇴 처리되었습니다.", 'success')
+    return redirect(url_for('admin_dashboard'))
+
 
 # ==========================================
 # 4. 도서 등록 / 상세 / 수정 / 상태 변경 / 삭제 / 복구
@@ -505,6 +624,7 @@ def register_book():
         return redirect(url_for('index'))
 
     return render_template('register_book.html')
+
 
 @app.route('/book/<int:book_id>')
 def detail(book_id):
@@ -585,6 +705,7 @@ def detail(book_id):
         replies_map=replies_map
     )
 
+
 @app.route('/book/<int:book_id>/edit', methods=['GET', 'POST'])
 def edit_post(book_id):
     if not g.user:
@@ -664,6 +785,7 @@ def edit_post(book_id):
 
     return render_template('edit_post.html', book=book, existing_images=existing_images)
 
+
 @app.route('/api/book/<int:book_id>/status', methods=['POST'])
 def change_book_status(book_id):
     if not g.user:
@@ -704,6 +826,7 @@ def change_book_status(book_id):
     db.commit()
     return jsonify({'success': True, 'message': '도서 상태가 변경되었습니다.'})
 
+
 @app.route('/api/book/<int:book_id>/delete', methods=['POST'])
 def delete_post(book_id):
     if not g.user:
@@ -735,6 +858,7 @@ def delete_post(book_id):
     db.commit()
     return jsonify({'success': True, 'message': '게시글이 삭제되었습니다.'})
 
+
 @app.route('/api/book/<int:book_id>/restore', methods=['POST'])
 def restore_post(book_id):
     if not is_admin_user():
@@ -745,6 +869,7 @@ def restore_post(book_id):
     cursor.execute("UPDATE books SET status = 'AVAILABLE' WHERE id = ?", (book_id,))
     db.commit()
     return jsonify({'success': True, 'message': '삭제된 게시글이 판매중 상태로 복구되었습니다.'})
+
 
 # ==========================================
 # 5. 댓글(거래 요청) / 답글(거래 승인) / 댓글 삭제 AJAX API
@@ -776,6 +901,7 @@ def add_comment(book_id):
     )
     db.commit()
     return jsonify({'success': True})
+
 
 @app.route('/api/book/<int:book_id>/comment/<int:comment_id>/reply', methods=['POST'])
 def reply_and_approve(book_id, comment_id):
@@ -838,6 +964,7 @@ def reply_and_approve(book_id, comment_id):
 
     return jsonify({'success': True, 'message': '답글이 등록되었으며 거래가 예약되었습니다.'})
 
+
 @app.route('/api/comment/<int:comment_id>/delete', methods=['POST'])
 def delete_comment(comment_id):
     if not g.user:
@@ -884,6 +1011,7 @@ def delete_comment(comment_id):
 
     db.commit()
     return jsonify({'success': True, 'message': '댓글이 삭제되었습니다.'})
+
 
 # ==========================================
 # 6. 거래 취소 / 완료 / 5단계 만족도 평가 AJAX API
@@ -934,6 +1062,7 @@ def cancel_trade(trade_id):
     db.commit()
     return jsonify({'success': True, 'message': '예약이 취소되었으며 도서가 다시 판매중 상태로 변경되었습니다.'})
 
+
 @app.route('/api/trade/<int:trade_id>/complete', methods=['POST'])
 def complete_trade_by_seller(trade_id):
     if not g.user:
@@ -954,6 +1083,7 @@ def complete_trade_by_seller(trade_id):
     cursor.execute("UPDATE books SET status = 'SOLD' WHERE id = ?", (trade['book_id'],))
     db.commit()
     return jsonify({'success': True, 'message': '거래가 완료 처리되었습니다.'})
+
 
 @app.route('/api/trade/<int:trade_id>/review', methods=['POST'])
 def submit_review(trade_id):
@@ -1005,8 +1135,9 @@ def submit_review(trade_id):
 
     return jsonify({'success': True, 'message': '거래 평가가 완료되었으며 판매자 신뢰 지수에 반영되었습니다.'})
 
+
 # ==========================================
-# 7. 통합 관리 대시보드 (/admin)
+# 7. 통합 관리 대시보드 (/admin) 및 회원 탈퇴·복구 API
 # ==========================================
 @app.route('/admin')
 def admin_dashboard():
@@ -1058,6 +1189,54 @@ def admin_dashboard():
         trades=all_trades,
         comments=all_comments
     )
+
+
+@app.route('/api/user/<int:user_id>/withdraw', methods=['POST'])
+def admin_withdraw_user(user_id):
+    if not is_admin_user():
+        return jsonify({'success': False, 'message': '권한이 없습니다.'}), 403
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    target_user = cursor.fetchone()
+    if not target_user:
+        return jsonify({'success': False, 'message': '존재하지 않는 회원입니다.'}), 404
+
+    success, message = execute_user_withdrawal(db, target_user, by_admin=True)
+    status_code = 200 if success else 400
+    return jsonify({'success': success, 'message': message}), status_code
+
+
+@app.route('/api/user/<int:user_id>/restore', methods=['POST'])
+def admin_restore_user(user_id):
+    if not is_admin_user():
+        return jsonify({'success': False, 'message': '권한이 없습니다.'}), 403
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    target_user = cursor.fetchone()
+    if not target_user:
+        return jsonify({'success': False, 'message': '존재하지 않는 회원입니다.'}), 404
+
+    if target_user['is_deleted'] == 0:
+        return jsonify({'success': False, 'message': '이미 활성 상태인 회원입니다.'}), 400
+
+    cursor.execute(
+        "SELECT id FROM users WHERE student_id = ? AND is_deleted = 0 AND id != ?",
+        (target_user['student_id'], user_id)
+    )
+    if cursor.fetchone() is not None:
+        return jsonify({
+            'success': False,
+            'message': '동일한 학번으로 재가입된 활성 계정이 존재하여 복구할 수 없습니다.'
+        }), 400
+
+    cursor.execute("UPDATE users SET is_deleted = 0 WHERE id = ?", (user_id,))
+    db.commit()
+    return jsonify({'success': True, 'message': '탈퇴 회원이 정상 계정으로 복구되었습니다.'})
+
 
 # ==========================================
 # 8. 국립중앙도서관 Open API 도서 & 표지 검색
@@ -1199,6 +1378,7 @@ def nl_book_search():
         'total_pages': total_pages
     })
 
+
 @app.route('/api/nl-cover-proxy')
 def nl_cover_proxy():
     img_url = request.args.get('url', '').strip()
@@ -1211,6 +1391,7 @@ def nl_cover_proxy():
     except Exception:
         pass
     return '', 404
+
 
 # ==========================================
 # 9-1. 판매자용: 게시글 등록·수정 시 Gemini AI 상태 자동 평가 API
@@ -1292,6 +1473,7 @@ def ai_eval():
         app.logger.error("Gemini AI Eval Error: %s", mask_sensitive_info(e))
         return jsonify({'error': 'AI 상태 평가 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}), 500
 
+
 # ==========================================
 # 9-2. 구매자용: 상세 페이지 동일 도서 상품 비교 분석 API
 # ==========================================
@@ -1361,6 +1543,7 @@ def ai_compare_book(book_id):
     except Exception as e:
         app.logger.error("Gemini AI Compare Error: %s", mask_sensitive_info(e))
         return jsonify({'error': 'AI 상품 비교 분석 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}), 500
+
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
