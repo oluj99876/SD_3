@@ -144,18 +144,6 @@ def ensure_database_initialized():
                 with open(schema_path, 'r', encoding='utf-8') as f:
                     conn.executescript(f.read())
                 need_seed = True
-
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS book_images (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                book_id INTEGER NOT NULL,
-                image_filename TEXT NOT NULL,
-                is_primary INTEGER NOT NULL DEFAULT 0,
-                sort_order INTEGER NOT NULL DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
-            )
-        """)
         conn.commit()
     finally:
         conn.close()
@@ -183,7 +171,7 @@ def load_logged_in_user():
     else:
         cursor = get_db().cursor()
         cursor.execute(
-            "SELECT id, student_id, name, trust_score, is_admin FROM users WHERE id = ?",
+            "SELECT id, student_id, name, department, phone, trust_score, is_admin FROM users WHERE id = ?",
             (user_id,)
         )
         g.user = cursor.fetchone()
@@ -229,6 +217,8 @@ def register():
     if request.method == 'POST':
         student_id = request.form['student_id'].strip()
         name = request.form['name'].strip()
+        department = request.form.get('department', '').strip() or '소프트웨어학과'
+        phone = request.form.get('phone', '').strip()
         password = request.form['password']
 
         db = get_db()
@@ -240,8 +230,9 @@ def register():
 
         hashed_password = generate_password_hash(password)
         cursor.execute(
-            "INSERT INTO users (student_id, name, password_hash) VALUES (?, ?, ?)",
-            (student_id, name, hashed_password)
+            """INSERT INTO users (student_id, name, department, phone, password_hash)
+               VALUES (?, ?, ?, ?, ?)""",
+            (student_id, name, department, phone, hashed_password)
         )
         db.commit()
         flash('회원가입이 완료되었습니다. 로그인해주세요.', 'success')
@@ -279,7 +270,7 @@ def logout():
     return redirect(url_for('index'))
 
 # ==========================================
-# 3. 마이페이지 & 공개 프로필
+# 3. 마이페이지 & 공개 프로필 & 회원 정보 수정
 # ==========================================
 @app.route('/profile')
 def my_profile():
@@ -293,7 +284,10 @@ def user_profile(user_id):
     db = get_db()
     cursor = db.cursor()
 
-    cursor.execute("SELECT id, student_id, name, trust_score, is_admin, created_at FROM users WHERE id = ?", (user_id,))
+    cursor.execute(
+        "SELECT id, student_id, name, department, phone, trust_score, is_admin, created_at FROM users WHERE id = ?",
+        (user_id,)
+    )
     target_user = cursor.fetchone()
     if not target_user:
         flash('존재하지 않는 사용자입니다.', 'danger')
@@ -393,6 +387,59 @@ def user_profile(user_id):
         book_requests_map=book_requests_map
     )
 
+@app.route('/profile/<int:user_id>/edit', methods=['POST'])
+def edit_profile(user_id):
+    if not g.user:
+        flash('로그인이 필요합니다.', 'warning')
+        return redirect(url_for('login'))
+
+    if g.user['id'] != user_id and not is_admin_user():
+        flash('회원 정보 수정 권한이 없습니다.', 'danger')
+        return redirect(url_for('index'))
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    target_user = cursor.fetchone()
+    if not target_user:
+        flash('존재하지 않는 사용자입니다.', 'danger')
+        return redirect(url_for('index'))
+
+    name = request.form.get('name', '').strip()
+    department = request.form.get('department', '').strip()
+    phone = request.form.get('phone', '').strip()
+    current_password = request.form.get('current_password', '')
+    new_password = request.form.get('new_password', '')
+    confirm_password = request.form.get('confirm_password', '')
+
+    if not name or not department:
+        flash('이름과 학과는 필수 입력 항목입니다.', 'danger')
+        return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+
+    new_password_hash = target_user['password_hash']
+    if new_password:
+        if new_password != confirm_password:
+            flash('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.', 'danger')
+            return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+        if g.user['id'] == user_id and not check_password_hash(target_user['password_hash'], current_password):
+            flash('현재 비밀번호가 올바르지 않습니다.', 'danger')
+            return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+        new_password_hash = generate_password_hash(new_password)
+
+    cursor.execute(
+        """UPDATE users
+           SET name = ?, department = ?, phone = ?, password_hash = ?
+           WHERE id = ?""",
+        (name, department, phone, new_password_hash, user_id)
+    )
+    db.commit()
+
+    if g.user['id'] == user_id:
+        session['name'] = name
+
+    flash('회원 정보가 성공적으로 수정되었습니다.', 'success')
+    return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+
 # ==========================================
 # 4. 도서 등록 / 상세 / 수정 / 상태 변경 / 삭제 / 복구
 # ==========================================
@@ -464,7 +511,7 @@ def detail(book_id):
     db = get_db()
     cursor = db.cursor()
     cursor.execute(
-        """SELECT b.*, u.name, u.student_id, u.trust_score
+        """SELECT b.*, u.name, u.student_id, u.department, u.phone, u.trust_score
            FROM books b
            JOIN users u ON b.seller_id = u.id
            WHERE b.id = ? AND b.status != 'DELETED'""",
@@ -560,20 +607,6 @@ def edit_post(book_id):
         (book_id,)
     )
     existing_images = cursor.fetchall()
-    if not existing_images and book['image_filename'] and book['image_filename'] != 'default_book.png':
-        cursor.execute(
-            """INSERT INTO book_images (book_id, image_filename, is_primary, sort_order)
-               VALUES (?, ?, 1, 0)""",
-            (book_id, book['image_filename'])
-        )
-        db.commit()
-        cursor.execute(
-            """SELECT * FROM book_images
-               WHERE book_id = ?
-               ORDER BY is_primary DESC, sort_order ASC, id ASC""",
-            (book_id,)
-        )
-        existing_images = cursor.fetchall()
 
     if request.method == 'POST':
         title = request.form['title'].strip()
@@ -584,13 +617,14 @@ def edit_post(book_id):
         condition_grade = request.form['condition_grade']
         description = request.form['description']
 
+        ai_action = request.form.get('ai_action', '').strip()
+        if ai_action == 'remove':
+            ai_result = ''
+        else:
+            ai_result = request.form.get('ai_evaluated_result', '').strip()
+
         keep_filenames = request.form.getlist('keep_images')
         primary_key = request.form.get('primary_image_key', '').strip()
-
-        cursor.execute("SELECT id, image_filename FROM book_images WHERE book_id = ?", (book_id,))
-        for row in cursor.fetchall():
-            if row['image_filename'] not in keep_filenames:
-                cursor.execute("DELETE FROM book_images WHERE id = ?", (row['id'],))
 
         final_items = [{'key': f'existing:{fname}', 'filename': fname} for fname in keep_filenames]
 
@@ -619,9 +653,10 @@ def edit_post(book_id):
         cursor.execute(
             """UPDATE books
                SET title = ?, author = ?, publisher = ?, original_price = ?,
-                   selling_price = ?, condition_grade = ?, description = ?, image_filename = ?
+                   selling_price = ?, condition_grade = ?, ai_evaluated_result = ?,
+                   description = ?, image_filename = ?
                WHERE id = ?""",
-            (title, author, publisher, original_price, selling_price, condition_grade, description, primary_filename, book_id)
+            (title, author, publisher, original_price, selling_price, condition_grade, ai_result, description, primary_filename, book_id)
         )
         db.commit()
         flash('게시글이 수정되었습니다.', 'success')
@@ -1178,7 +1213,7 @@ def nl_cover_proxy():
     return '', 404
 
 # ==========================================
-# 9-1. 판매자용: 게시글 등록 시 Gemini AI 상태 자동 평가 API
+# 9-1. 판매자용: 게시글 등록·수정 시 Gemini AI 상태 자동 평가 API
 # ==========================================
 @app.route('/api/ai-eval', methods=['POST'])
 def ai_eval():
@@ -1187,34 +1222,60 @@ def ai_eval():
 
     if request.content_type and 'multipart/form-data' in request.content_type:
         title = request.form.get('title', '').strip()
+        original_price = request.form.get('original_price', '').strip()
+        selling_price = request.form.get('selling_price', '').strip()
         description = request.form.get('description', '').strip()
         uploaded_files = request.files.getlist('images')
+        existing_filenames = request.form.getlist('existing_images')
     else:
         data = request.get_json() or {}
         title = data.get('title', '').strip()
+        original_price = str(data.get('original_price', '')).strip()
+        selling_price = str(data.get('selling_price', '')).strip()
         description = data.get('description', '').strip()
         uploaded_files = []
+        existing_filenames = []
 
-    if not description and not uploaded_files:
+    ai_images = []
+    for fname in existing_filenames:
+        safe_name = os.path.basename(fname.strip())
+        if not safe_name or safe_name == 'default_book.png':
+            continue
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
+        if os.path.exists(file_path) and allowed_file(safe_name):
+            try:
+                with Image.open(file_path) as img:
+                    norm_img = normalize_to_rgb(img.copy())
+                    norm_img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                    ai_images.append(norm_img)
+            except Exception:
+                pass
+
+    for file in uploaded_files:
+        if len(ai_images) >= 3:
+            break
+        if file and file.filename and allowed_file(file.filename):
+            ai_images.append(prepare_ai_image(file))
+
+    if not description and not ai_images:
         return jsonify({'error': 'AI 상태 평가를 위해 도서 설명을 입력하거나 상태 사진을 첨부해주세요.'}), 400
+
+    price_info = f"정가 {original_price}원 / 판매희망가 {selling_price}원" if selling_price else "미입력"
 
     try:
         prompt = (
             "당신은 대학 전공·교양 중고 서적의 물리적 상태를 판정하는 AI 검수원입니다.\n"
-            "아래 도서명, 판매자의 상태 설명, 첨부된 실물 사진을 분석하여:\n"
+            "아래 도서명, 가격 정보, 판매자의 상태 설명, 첨부된 실물 사진을 종합 분석하여:\n"
             "1) 상태 등급을 '최상', '상', '중', '하' 중 하나로 판정하고,\n"
             "2) 구매자가 참고할 수 있도록 필기·밑줄·훼손·변색 여부를 포함한 객관적 상태 검수 요약을 한 문장(60자 이내)으로 작성하세요.\n"
             "주의: 출력은 일반 텍스트 필드(Plain Text)에 그대로 노출되므로 별표(**), 글머리 기호(*, -), 제목 기호(#) 등 마크다운 문법을 절대 사용하지 마세요.\n"
             "출력 형식: [추천등급: 상] 필기 흔적이 적고 표지 및 내지가 전반적으로 깔끔한 상태입니다.\n\n"
             f"도서명: {title or '미입력'}\n"
+            f"가격 정보: {price_info}\n"
             f"판매자 상태 설명: {description or '설명 없음'}"
         )
 
-        contents = [prompt]
-        for file in uploaded_files[:3]:
-            if file and file.filename and allowed_file(file.filename):
-                contents.append(prepare_ai_image(file))
-
+        contents = [prompt] + ai_images[:3]
         result_text = generate_gemini_response(contents)
 
         detected_grade = ''

@@ -1,28 +1,82 @@
 {% extends 'base.html' %}
 
+{% block title %}회원가입 - 캠퍼스 중고 전공서적 거래{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card shadow-sm">
-            <div class="card-body p-4">
-                <h3 class="card-title text-center mb-4">회원가입</h3>
-                <form action="{{ url_for('register') }}" method="POST">
-                    <div class="mb-3">
-                        <label class="form-label">학번</label>
-                        <input type="text" name="student_id" class="form-control" placeholder="예: 20231101" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">이름</label>
-                        <input type="text" name="name" class="form-control" placeholder="홍길동" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">비밀번호</label>
-                        <input type="password" name="password" class="form-control" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">가입하기</button>
-                </form>
-            </div>
+  <div class="col-md-6 col-lg-5">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-white py-3">
+        <h4 class="mb-0 fw-bold text-center">회원가입</h4>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('register') }}" id="registerForm">
+          <div class="mb-3">
+            <label for="student_id" class="form-label fw-semibold">학번 <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="student_id" name="student_id"
+                   placeholder="예: 20240001" required autofocus>
+            <div class="form-text">로그인 시 아이디로 사용됩니다.</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="name" class="form-label fw-semibold">이름 <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="name" name="name"
+                   placeholder="실명을 입력하세요" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="department" class="form-label fw-semibold">학과 <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="department" name="department"
+                   placeholder="예: 소프트웨어학과" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="phone" class="form-label fw-semibold">전화번호</label>
+            <input type="tel" class="form-control" id="phone" name="phone"
+                   placeholder="예: 010-1234-5678">
+            <div class="form-text">거래 예약 승인 후 직거래 연락 시 참고용으로 활용됩니다.</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="password" class="form-label fw-semibold">비밀번호 <span class="text-danger">*</span></label>
+            <input type="password" class="form-control" id="password" name="password"
+                   placeholder="비밀번호를 입력하세요" required>
+          </div>
+
+          <div class="mb-4">
+            <label for="password_confirm" class="form-label fw-semibold">비밀번호 확인 <span class="text-danger">*</span></label>
+            <input type="password" class="form-control" id="password_confirm"
+                   placeholder="비밀번호를 한 번 더 입력하세요" required>
+          </div>
+
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary btn-lg">가입하기</button>
+          </div>
+        </form>
+
+        <hr class="my-4">
+        <div class="text-center">
+          <span class="text-muted small">이미 계정이 있으신가요?</span>
+          <a href="{{ url_for('login') }}" class="small fw-semibold text-decoration-none ms-1">로그인</a>
         </div>
+      </div>
     </div>
+  </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('registerForm');
+  const pw = document.getElementById('password');
+  const pwConfirm = document.getElementById('password_confirm');
+
+  form.addEventListener('submit', (e) => {
+    if (pw.value !== pwConfirm.value) {
+      e.preventDefault();
+      alert('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      pwConfirm.focus();
+    }
+  });
+});
+</script>
 {% endblock %}

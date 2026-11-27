@@ -1,276 +1,559 @@
 {% extends 'base.html' %}
 
+{% block title %}{{ target_user['name'] }}님의 프로필 - 캠퍼스 중고 전공서적 거래{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-10">
-        <!-- 사용자 프로필 헤더 카드 -->
-        <div class="card shadow-sm mb-4">
-            <div class="card-body p-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
-                <div>
-                    <h3 class="fw-bold mb-1">{{ target_user.name }} <small class="text-muted fs-6">({{ target_user.student_id }})</small></h3>
-                    <small class="text-muted">가입일: {{ target_user.created_at }}</small>
-                </div>
-                <div class="text-end">
-                    <div class="small text-muted mb-1">거래 신뢰 지수</div>
-                    <span class="fs-4 fw-bold text-primary">{{ target_user.trust_score }}점</span>
-                </div>
-            </div>
+<!-- 상단 사용자 프로필 요약 카드 -->
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body p-4">
+    <div class="row align-items-center">
+      <div class="col-md-7">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h3 class="mb-0 fw-bold">{{ target_user['name'] }}</h3>
+          <span class="badge bg-secondary">{{ target_user['student_id'] }}</span>
+          <span class="badge bg-light text-dark border">{{ target_user['department'] or '학과 미입력' }}</span>
+          {% if target_user['is_admin'] == 1 %}
+            <span class="badge bg-dark">관리자</span>
+          {% endif %}
         </div>
-
-        <!-- 탭 내비게이션 -->
-        <ul class="nav nav-tabs mb-4">
-            {% if can_manage %}
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'purchases' %}active{% endif %}"
-                   href="{{ url_for('user_profile', user_id=target_user.id, tab='purchases') }}">구매 내역 ({{ purchase_trades|length }})</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'sales' %}active{% endif %}"
-                   href="{{ url_for('user_profile', user_id=target_user.id, tab='sales') }}">판매 · 예약 관리 ({{ sale_trades|length }})</a>
-            </li>
-            {% endif %}
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'books' or (not can_manage and active_tab == 'purchases') %}active{% endif %}"
-                   href="{{ url_for('user_profile', user_id=target_user.id, tab='books') }}">등록 도서 ({{ selling_books|length }})</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'reviews' %}active{% endif %}"
-                   href="{{ url_for('user_profile', user_id=target_user.id, tab='reviews') }}">거래 후기 ({{ reviews|length }})</a>
-            </li>
-        </ul>
-
-        <!-- 탭 1: 구매 내역 -->
-        {% if can_manage and active_tab == 'purchases' %}
-        <div class="d-flex flex-column gap-3">
-            {% for t in purchase_trades %}
-            <div class="card shadow-sm" id="trade-{{ t.id }}">
-                <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
-                    <div>
-                        <div class="mb-1">
-                            {% if t.status == 'RESERVED' %}
-                                <span class="badge bg-warning text-dark">예약중</span>
-                            {% elif t.status == 'COMPLETED' %}
-                                <span class="badge bg-success">거래완료</span>
-                            {% else %}
-                                <span class="badge bg-secondary">취소됨</span>
-                            {% endif %}
-                            <a href="{{ url_for('detail', book_id=t.book_id) }}" class="fw-bold text-decoration-none ms-1">{{ t.book_title }}</a>
-                        </div>
-                        <small class="text-muted">판매자: {{ t.seller_name }} ({{ t.seller_student_id }}) · {{ "{:,}".format(t.selling_price) }}원</small>
-                    </div>
-                    <div class="d-flex gap-2">
-                        {% if t.status == 'RESERVED' %}
-                            <button type="button" class="btn btn-sm btn-outline-danger btn-profile-cancel-trade" data-trade-id="{{ t.id }}">예약 취소</button>
-                            <button type="button" class="btn btn-sm btn-primary btn-profile-submit-review" data-trade-id="{{ t.id }}">수령 확인 및 평가</button>
-                        {% elif t.status == 'COMPLETED' and not t.review_id %}
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-profile-submit-review" data-trade-id="{{ t.id }}">거래 평가 작성</button>
-                        {% elif t.review_id %}
-                            <span class="badge bg-light text-dark border">평가 완료 ({{ t.my_rating }}점)</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <p class="text-muted text-center py-4">구매 내역이 없습니다.</p>
-            {% endfor %}
+        <div class="text-muted small">
+          {% if can_manage and target_user['phone'] %}
+            <span class="me-3">연락처: {{ target_user['phone'] }}</span>
+          {% endif %}
+          <span>가입일: {{ target_user['created_at'][:10] if target_user['created_at'] else '-' }}</span>
         </div>
+      </div>
 
-        <!-- 탭 2: 판매 · 예약 관리 -->
-        {% elif can_manage and active_tab == 'sales' %}
-        <div class="d-flex flex-column gap-3">
-            {% for t in sale_trades %}
-            <div class="card shadow-sm" id="trade-{{ t.id }}">
-                <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
-                    <div>
-                        <div class="mb-1">
-                            {% if t.status == 'RESERVED' %}
-                                <span class="badge bg-warning text-dark">예약중</span>
-                            {% elif t.status == 'COMPLETED' %}
-                                <span class="badge bg-success">거래완료</span>
-                            {% else %}
-                                <span class="badge bg-secondary">취소됨</span>
-                            {% endif %}
-                            <a href="{{ url_for('detail', book_id=t.book_id) }}" class="fw-bold text-decoration-none ms-1">{{ t.book_title }}</a>
-                        </div>
-                        <small class="text-muted">구매자: {{ t.buyer_name }} ({{ t.buyer_student_id }}) · {{ "{:,}".format(t.selling_price) }}원</small>
-                        {% if t.status == 'CANCELLED' and t.cancel_reason %}
-                        <small class="text-danger d-block">취소 사유: {{ t.cancel_reason }}</small>
-                        {% endif %}
-                    </div>
-                    {% if t.status == 'RESERVED' %}
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-success btn-profile-complete-trade" data-trade-id="{{ t.id }}">거래 완료</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger btn-profile-cancel-trade" data-trade-id="{{ t.id }}">예약 취소</button>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% else %}
-            <p class="text-muted text-center py-4">판매 거래 내역이 없습니다.</p>
-            {% endfor %}
+      <div class="col-md-5 mt-3 mt-md-0">
+        <div class="p-3 bg-light rounded border">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-semibold text-secondary">거래 신뢰 지수</span>
+            <span class="fw-bold fs-5 {% if target_user['trust_score'] >= 70 %}text-success{% elif target_user['trust_score'] >= 40 %}text-primary{% else %}text-danger{% endif %}">
+              {{ '%.1f'|format(target_user['trust_score']) }} / 100.0점
+            </span>
+          </div>
+          <div class="progress" style="height: 8px;">
+            <div class="progress-bar {% if target_user['trust_score'] >= 70 %}bg-success{% elif target_user['trust_score'] >= 40 %}bg-primary{% else %}bg-danger{% endif %}"
+                 id="trustScoreBar"
+                 role="progressbar"
+                 data-trust-score="{{ target_user['trust_score'] }}"
+                 aria-valuenow="{{ target_user['trust_score'] }}"
+                 aria-valuemin="0"
+                 aria-valuemax="100"></div>
+          </div>
         </div>
-
-        <!-- 탭 3: 등록 도서 & 받은 거래 요청 댓글 -->
-        {% elif active_tab == 'books' or (not can_manage and active_tab == 'purchases') %}
-        <div class="d-flex flex-column gap-3">
-            {% for b in selling_books %}
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                        <div>
-                            {% if b.status == 'AVAILABLE' %}
-                                <span class="badge bg-success me-1">판매중</span>
-                            {% elif b.status == 'RESERVED' %}
-                                <span class="badge bg-warning text-dark me-1">예약중</span>
-                            {% else %}
-                                <span class="badge bg-secondary me-1">거래완료</span>
-                            {% endif %}
-                            <a href="{{ url_for('detail', book_id=b.id) }}" class="fw-bold text-decoration-none">{{ b.title }}</a>
-                            <span class="text-primary fw-bold ms-2">{{ "{:,}".format(b.selling_price) }}원</span>
-                        </div>
-                        {% if can_manage %}
-                        <div class="d-flex gap-2">
-                            <a href="{{ url_for('edit_post', book_id=b.id) }}" class="btn btn-sm btn-outline-primary">수정</a>
-                            <button type="button" class="btn btn-sm btn-outline-danger btn-profile-delete-book" data-book-id="{{ b.id }}">삭제</button>
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    {% if can_manage and book_requests_map.get(b.id) %}
-                    <div class="mt-3 pt-2 border-top">
-                        <small class="fw-bold text-secondary d-block mb-2">받은 거래 요청 댓글</small>
-                        <div class="d-flex flex-column gap-2">
-                            {% for req in book_requests_map.get(b.id) %}
-                            <div class="bg-light rounded p-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                                <div class="small">
-                                    <strong>{{ req.commenter_name }} ({{ req.commenter_student_id }})</strong>: {{ req.content }}
-                                    {% if req.is_approved %}<span class="badge bg-success ms-1">승인됨</span>{% endif %}
-                                </div>
-                                {% if b.status == 'AVAILABLE' %}
-                                <div class="d-flex gap-1">
-                                    <button type="button" class="btn btn-sm btn-outline-success btn-profile-approve-comment" data-book-id="{{ b.id }}" data-comment-id="{{ req.id }}">예약 승인</button>
-                                </div>
-                                {% endif %}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% else %}
-            <p class="text-muted text-center py-4">등록된 도서가 없습니다.</p>
-            {% endfor %}
-        </div>
-
-        <!-- 탭 4: 거래 후기 -->
-        {% elif active_tab == 'reviews' %}
-        <div class="d-flex flex-column gap-3">
-            {% for r in reviews %}
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <div>
-                            <span class="fw-bold">{{ r.reviewer_name }} ({{ r.reviewer_student_id }})</span>
-                            <span class="badge bg-warning text-dark ms-2">{{ r.rating }}점</span>
-                        </div>
-                        <small class="text-muted">{{ r.created_at }}</small>
-                    </div>
-                    <small class="text-muted d-block mb-2">거래 도서: {{ r.book_title }}</small>
-                    <p class="mb-0">{{ r.comment }}</p>
-                </div>
-            </div>
-            {% else %}
-            <p class="text-muted text-center py-4">등록된 거래 후기가 없습니다.</p>
-            {% endfor %}
-        </div>
-        {% endif %}
+      </div>
     </div>
+  </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
+<!-- 탭 내비게이션 -->
+{% set current_tab = active_tab if can_manage else (active_tab if active_tab in ('books', 'reviews') else 'books') %}
+
+<ul class="nav nav-tabs mb-4">
+  {% if can_manage %}
+    <li class="nav-item">
+      <a class="nav-link {% if current_tab == 'purchases' %}active fw-bold{% endif %}"
+         href="{{ url_for('user_profile', user_id=target_user['id'], tab='purchases') }}">
+        구매 내역 ({{ purchase_trades|length }})
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if current_tab == 'sales' %}active fw-bold{% endif %}"
+         href="{{ url_for('user_profile', user_id=target_user['id'], tab='sales') }}">
+        판매 거래 관리 ({{ sale_trades|length }})
+      </a>
+    </li>
+  {% endif %}
+
+  <li class="nav-item">
+    <a class="nav-link {% if current_tab == 'books' %}active fw-bold{% endif %}"
+       href="{{ url_for('user_profile', user_id=target_user['id'], tab='books') }}">
+      등록 도서 ({{ selling_books|length }})
+    </a>
+  </li>
+
+  <li class="nav-item">
+    <a class="nav-link {% if current_tab == 'reviews' %}active fw-bold{% endif %}"
+       href="{{ url_for('user_profile', user_id=target_user['id'], tab='reviews') }}">
+      거래 후기 ({{ reviews|length }})
+    </a>
+  </li>
+
+  {% if can_manage %}
+    <li class="nav-item">
+      <a class="nav-link {% if current_tab == 'edit' %}active fw-bold{% endif %}"
+         href="{{ url_for('user_profile', user_id=target_user['id'], tab='edit') }}">
+        회원 정보 수정
+      </a>
+    </li>
+  {% endif %}
+</ul>
+
+<!-- 탭 1: 구매 내역 (본인/관리자 전용) -->
+{% if can_manage and current_tab == 'purchases' %}
+  {% if purchase_trades %}
+    <div class="d-flex flex-column gap-3">
+      {% for t in purchase_trades %}
+        <div class="card shadow-sm border-0" id="trade-{{ t['id'] }}">
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div>
+                <div class="mb-1">
+                  {% if t['status'] == 'RESERVED' %}
+                    <span class="badge bg-warning text-dark">예약 중</span>
+                  {% elif t['status'] == 'COMPLETED' %}
+                    <span class="badge bg-success">거래 완료</span>
+                  {% else %}
+                    <span class="badge bg-secondary">예약 취소</span>
+                  {% endif %}
+                  <span class="text-muted small ms-2">거래번호 #{{ t['id'] }} | {{ t['created_at'][:16] if t['created_at'] else '' }}</span>
+                </div>
+                <h5 class="mb-1">
+                  <a href="{{ url_for('detail', book_id=t['book_id']) }}" class="text-decoration-none text-dark fw-bold">
+                    {{ t['book_title'] }}
+                  </a>
+                </h5>
+                <div class="small text-muted">
+                  판매자: {{ t['seller_name'] }} ({{ t['seller_student_id'] }}) | 거래가: <strong>{{ '{:,}'.format(t['selling_price']) }}원</strong>
+                </div>
+                {% if t['status'] == 'CANCELLED' and t['cancel_reason'] %}
+                  <div class="small text-danger mt-1">
+                    취소 사유 ({{ t['cancelled_by'] or '시스템' }}): {{ t['cancel_reason'] }}
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="d-flex flex-wrap gap-2">
+                {% if t['status'] == 'RESERVED' %}
+                  <button type="button" class="btn btn-sm btn-primary"
+                          data-trade-id="{{ t['id'] }}"
+                          data-book-title="{{ t['book_title'] }}"
+                          onclick="openReviewModal(this)">
+                    거래 완료 및 만족도 평가
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-danger"
+                          data-trade-id="{{ t['id'] }}"
+                          onclick="cancelTrade(this)">
+                    예약 취소
+                  </button>
+                {% elif t['status'] == 'COMPLETED' %}
+                  {% if t['review_id'] %}
+                    <span class="badge bg-info text-dark align-self-center py-2 px-3">
+                      평가 완료 ({{ '%.1f'|format(t['my_rating']) }}점)
+                    </span>
+                  {% else %}
+                    <button type="button" class="btn btn-sm btn-outline-primary"
+                            data-trade-id="{{ t['id'] }}"
+                            data-book-title="{{ t['book_title'] }}"
+                            onclick="openReviewModal(this)">
+                      만족도 평가 작성
+                    </button>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-light border text-center py-4 text-muted">
+      구매 요청 또는 완료된 거래 내역이 없습니다.
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- 탭 2: 판매 거래 관리 (본인/관리자 전용) -->
+{% if can_manage and current_tab == 'sales' %}
+  <h5 class="fw-bold mb-3">진행 및 완료된 판매 거래</h5>
+  {% if sale_trades %}
+    <div class="d-flex flex-column gap-3 mb-4">
+      {% for t in sale_trades %}
+        <div class="card shadow-sm border-0" id="trade-{{ t['id'] }}">
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div>
+                <div class="mb-1">
+                  {% if t['status'] == 'RESERVED' %}
+                    <span class="badge bg-warning text-dark">예약 중</span>
+                  {% elif t['status'] == 'COMPLETED' %}
+                    <span class="badge bg-success">판매 완료</span>
+                  {% else %}
+                    <span class="badge bg-secondary">예약 취소</span>
+                  {% endif %}
+                  <span class="text-muted small ms-2">거래번호 #{{ t['id'] }} | {{ t['created_at'][:16] if t['created_at'] else '' }}</span>
+                </div>
+                <h5 class="mb-1">
+                  <a href="{{ url_for('detail', book_id=t['book_id']) }}" class="text-decoration-none text-dark fw-bold">
+                    {{ t['book_title'] }}
+                  </a>
+                </h5>
+                <div class="small text-muted">
+                  구매자: {{ t['buyer_name'] }} ({{ t['buyer_student_id'] }}) | 판매가: <strong>{{ '{:,}'.format(t['selling_price']) }}원</strong>
+                </div>
+                {% if t['status'] == 'CANCELLED' and t['cancel_reason'] %}
+                  <div class="small text-danger mt-1">
+                    취소 사유 ({{ t['cancelled_by'] or '시스템' }}): {{ t['cancel_reason'] }}
+                  </div>
+                {% endif %}
+              </div>
+
+              {% if t['status'] == 'RESERVED' %}
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-sm btn-success"
+                          data-trade-id="{{ t['id'] }}"
+                          onclick="completeTradeBySeller(this)">
+                    거래 완료 처리
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-danger"
+                          data-trade-id="{{ t['id'] }}"
+                          onclick="cancelTrade(this)">
+                    예약 취소
+                  </button>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-light border text-center py-4 text-muted mb-4">
+      성사된 판매 거래 내역이 없습니다.
+    </div>
+  {% endif %}
+
+  <h5 class="fw-bold mb-3">판매 중 도서별 구매 요청 댓글</h5>
+  {% set has_any_request = namespace(val=false) %}
+  <div class="d-flex flex-column gap-3">
+    {% for book in selling_books %}
+      {% set reqs = book_requests_map.get(book['id'], []) %}
+      {% if reqs %}
+        {% set has_any_request.val = true %}
+        <div class="card shadow-sm border-0">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <a href="{{ url_for('detail', book_id=book['id']) }}" class="fw-bold text-decoration-none text-dark">
+              {{ book['title'] }} ({{ '{:,}'.format(book['selling_price']) }}원)
+            </a>
+            <span class="badge {% if book['status'] == 'AVAILABLE' %}bg-primary{% elif book['status'] == 'RESERVED' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+              {{ '판매중' if book['status'] == 'AVAILABLE' else ('예약중' if book['status'] == 'RESERVED' else '판매완료') }}
+            </span>
+          </div>
+          <ul class="list-group list-group-flush">
+            {% for c in reqs %}
+              <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                  <span class="fw-semibold">{{ c['commenter_name'] }} ({{ c['commenter_student_id'] }})</span>
+                  <span class="badge bg-light text-dark border ms-1">신뢰지수 {{ '%.1f'|format(c['trust_score']) }}점</span>
+                  {% if c['is_approved'] == 1 %}
+                    <span class="badge bg-success ms-1">승인됨</span>
+                  {% endif %}
+                  <p class="mb-0 mt-1 small">{{ c['content'] }}</p>
+                </div>
+                {% if book['status'] == 'AVAILABLE' and c['user_id'] != book['seller_id'] %}
+                  <button type="button" class="btn btn-sm btn-outline-primary"
+                          data-book-id="{{ book['id'] }}"
+                          data-comment-id="{{ c['id'] }}"
+                          data-buyer-name="{{ c['commenter_name'] }}"
+                          onclick="approveCommentFromProfile(this)">
+                    거래 승인 답글
+                  </button>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if not has_any_request.val %}
+    <div class="alert alert-light border text-center py-4 text-muted">
+      현재 접수된 구매 요청 댓글이 없습니다.
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- 탭 3: 등록 도서 목록 -->
+{% if current_tab == 'books' %}
+  {% if selling_books %}
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+      {% for book in selling_books %}
+        <div class="col">
+          <div class="card h-100 shadow-sm border-0">
+            <img src="{{ url_for('static', filename='uploads/' + (book['image_filename'] or 'default_book.png')) }}"
+                 class="card-img-top" alt="{{ book['title'] }}"
+                 style="height: 200px; object-fit: cover;">
+            <div class="card-body d-flex flex-column">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge {% if book['status'] == 'AVAILABLE' %}bg-primary{% elif book['status'] == 'RESERVED' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                  {{ '판매중' if book['status'] == 'AVAILABLE' else ('예약중' if book['status'] == 'RESERVED' else '판매완료') }}
+                </span>
+                <span class="badge bg-light text-dark border">상태: {{ book['condition_grade'] }}</span>
+              </div>
+              <h6 class="card-title fw-bold mb-1">
+                <a href="{{ url_for('detail', book_id=book['id']) }}" class="text-decoration-none text-dark">
+                  {{ book['title'] }}
+                </a>
+              </h6>
+              <p class="text-muted small mb-2">{{ book['author'] }} | {{ book['publisher'] }}</p>
+              <p class="fw-bold text-primary mb-3">{{ '{:,}'.format(book['selling_price']) }}원</p>
+
+              {% if can_manage %}
+                <div class="mt-auto d-flex gap-2">
+                  <a href="{{ url_for('edit_post', book_id=book['id']) }}" class="btn btn-sm btn-outline-secondary flex-fill">수정</a>
+                  <button type="button" class="btn btn-sm btn-outline-danger flex-fill"
+                          data-book-id="{{ book['id'] }}"
+                          onclick="deleteBookFromProfile(this)">
+                    삭제
+                  </button>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-light border text-center py-4 text-muted">
+      등록된 도서가 없습니다.
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- 탭 4: 거래 후기 -->
+{% if current_tab == 'reviews' %}
+  {% if reviews %}
+    <div class="d-flex flex-column gap-3">
+      {% for r in reviews %}
+        <div class="card shadow-sm border-0">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <span class="fw-bold">{{ r['reviewer_name'] }} ({{ r['reviewer_student_id'] }})</span>
+                <span class="badge bg-primary ms-2">만족도 {{ '%.1f'|format(r['rating']) }} / 5.0</span>
+              </div>
+              <span class="text-muted small">{{ r['created_at'][:10] if r['created_at'] else '' }}</span>
+            </div>
+            <div class="small text-muted mb-1">거래 도서: {{ r['book_title'] }}</div>
+            <p class="mb-0">{{ r['comment'] }}</p>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-light border text-center py-4 text-muted">
+      표시할 거래 후기가 없습니다.
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- 탭 5: 회원 정보 수정 (본인/관리자 전용) -->
+{% if can_manage and current_tab == 'edit' %}
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-white py-3 fw-bold">회원 정보 수정</div>
+        <div class="card-body p-4">
+          <form method="POST" action="{{ url_for('edit_profile', user_id=target_user['id']) }}" id="editProfileForm">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">학번</label>
+              <input type="text" class="form-control" value="{{ target_user['student_id'] }}" disabled>
+              <div class="form-text">학번은 변경할 수 없습니다.</div>
+            </div>
+
+            <div class="mb-3">
+              <label for="edit_name" class="form-label fw-semibold">이름 <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="edit_name" name="name"
+                     value="{{ target_user['name'] }}" required>
+            </div>
+
+            <div class="mb-3">
+              <label for="edit_department" class="form-label fw-semibold">학과 <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="edit_department" name="department"
+                     value="{{ target_user['department'] or '' }}" required>
+            </div>
+
+            <div class="mb-3">
+              <label for="edit_phone" class="form-label fw-semibold">전화번호</label>
+              <input type="tel" class="form-control" id="edit_phone" name="phone"
+                     value="{{ target_user['phone'] or '' }}" placeholder="010-0000-0000">
+            </div>
+
+            <hr class="my-4">
+            <h6 class="fw-bold mb-2">비밀번호 변경</h6>
+            <p class="text-muted small mb-3">비밀번호를 변경할 경우에만 아래 항목을 입력하세요. 비워두면 기존 비밀번호가 유지됩니다.</p>
+
+            {% if g.user and g.user['id'] == target_user['id'] %}
+              <div class="mb-3">
+                <label for="current_password" class="form-label fw-semibold">현재 비밀번호</label>
+                <input type="password" class="form-control" id="current_password" name="current_password"
+                       placeholder="본인 확인을 위해 현재 비밀번호 입력">
+              </div>
+            {% endif %}
+
+            <div class="mb-3">
+              <label for="new_password" class="form-label fw-semibold">새 비밀번호</label>
+              <input type="password" class="form-control" id="new_password" name="new_password"
+                     placeholder="변경할 새 비밀번호 입력">
+            </div>
+
+            <div class="mb-4">
+              <label for="confirm_password" class="form-label fw-semibold">새 비밀번호 확인</label>
+              <input type="password" class="form-control" id="confirm_password" name="confirm_password"
+                     placeholder="새 비밀번호 재입력">
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <a href="{{ url_for('user_profile', user_id=target_user['id'], tab='purchases') }}" class="btn btn-outline-secondary">취소</a>
+              <button type="submit" class="btn btn-primary">변경사항 저장</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<!-- 만족도 평가 모달 -->
+<div class="modal fade" id="reviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">거래 완료 및 만족도 평가</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="review_trade_id">
+        <p class="small text-muted mb-3" id="review_book_label"></p>
+        <div class="mb-3">
+          <label for="review_rating" class="form-label fw-semibold">만족도 점수 (판매자 신뢰 지수 반영)</label>
+          <select class="form-select" id="review_rating">
+            <option value="5.0" selected>5.0점 - 매우 만족 (+2.0점)</option>
+            <option value="4.0">4.0점 - 만족 (+1.0점)</option>
+            <option value="3.0">3.0점 - 보통 (0.0점)</option>
+            <option value="2.0">2.0점 - 불만족 (-2.0점)</option>
+            <option value="1.0">1.0점 - 매우 불만족 (-5.0점)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="review_comment" class="form-label fw-semibold">거래 후기 <span class="text-danger">*</span></label>
+          <textarea class="form-control" id="review_comment" rows="3"
+                    placeholder="도서 상태, 약속 시간 준수 여부 등 거래 경험을 남겨주세요."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">닫기</button>
+        <button type="button" class="btn btn-primary" onclick="submitReview()">평가 제출</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-document.querySelectorAll('.btn-profile-cancel-trade').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const tradeId = this.dataset.tradeId;
-        const reason = prompt('예약 취소 사유를 입력해주세요:', '일정 변경');
-        if (reason === null || !reason.trim()) return;
-        fetch(`/api/trade/${tradeId}/cancel`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cancel_reason: reason.trim() })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+async function cancelTrade(btn) {
+  const tradeId = btn.dataset.tradeId;
+  const reason = prompt('예약 취소 사유를 입력해주세요:');
+  if (!reason || !reason.trim()) return;
 
-document.querySelectorAll('.btn-profile-complete-trade').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const tradeId = this.dataset.tradeId;
-        showConfirmModal('거래 완료', '거래를 완료 처리하시겠습니까?', function() {
-            fetch(`/api/trade/${tradeId}/complete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(res => res.json()).then(data => {
-                if (data.success) location.reload();
-                else showAlertModal('오류', data.message);
-            });
-        });
-    });
-});
+  const res = await fetch(`/api/trade/${tradeId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cancel_reason: reason.trim() })
+  });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
 
-document.querySelectorAll('.btn-profile-submit-review').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const tradeId = this.dataset.tradeId;
-        const ratingStr = prompt('만족도 점수를 입력해주세요 (5, 4, 3, 2, 1):', '5');
-        if (ratingStr === null) return;
-        const comment = prompt('거래 후기를 입력해주세요:', '상태가 좋고 약속 시간을 잘 지키셨습니다.');
-        if (comment === null || !comment.trim()) return;
+async function completeTradeBySeller(btn) {
+  const tradeId = btn.dataset.tradeId;
+  if (!confirm('해당 거래를 판매 완료로 처리하시겠습니까?')) return;
 
-        fetch(`/api/trade/${tradeId}/review`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating: parseFloat(ratingStr) || 5.0, comment: comment.trim() })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+  const res = await fetch(`/api/trade/${tradeId}/complete`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
 
-document.querySelectorAll('.btn-profile-approve-comment').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const bookId = this.dataset.bookId;
-        const commentId = this.dataset.commentId;
-        const reply = prompt('거래 승인 안내 답글을 입력해주세요:', '거래 승인합니다. 댓글로 시간 맞춰요.');
-        if (reply === null || !reply.trim()) return;
-        fetch(`/api/book/${bookId}/comment/${commentId}/reply`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: reply.trim() })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.reload();
-            else showAlertModal('오류', data.message);
-        });
-    });
-});
+function openReviewModal(btn) {
+  const tradeId = btn.dataset.tradeId;
+  const bookTitle = btn.dataset.bookTitle;
+  document.getElementById('review_trade_id').value = tradeId;
+  document.getElementById('review_book_label').textContent = `대상 도서: ${bookTitle}`;
+  document.getElementById('review_comment').value = '';
+  const modal = new bootstrap.Modal(document.getElementById('reviewModal'));
+  modal.show();
+}
 
-document.querySelectorAll('.btn-profile-delete-book').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const bookId = this.dataset.bookId;
-        showConfirmModal('게시글 삭제', '이 게시글을 삭제하시겠습니까?', function() {
-            fetch(`/api/book/${bookId}/delete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(res => res.json()).then(data => {
-                if (data.success) location.reload();
-                else showAlertModal('오류', data.message);
-            });
-        });
+async function submitReview() {
+  const tradeId = document.getElementById('review_trade_id').value;
+  const rating = document.getElementById('review_rating').value;
+  const comment = document.getElementById('review_comment').value.trim();
+
+  if (!comment) {
+    alert('거래 후기를 입력해주세요.');
+    return;
+  }
+
+  const res = await fetch(`/api/trade/${tradeId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating: parseFloat(rating), comment })
+  });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
+
+async function approveCommentFromProfile(btn) {
+  const bookId = btn.dataset.bookId;
+  const commentId = btn.dataset.commentId;
+  const buyerName = btn.dataset.buyerName;
+  const replyText = prompt(`${buyerName}님에게 보낼 거래 승인 답글을 입력하세요:`, '거래 승인합니다. 희망하시는 시간과 장소를 알려주세요.');
+  if (!replyText || !replyText.trim()) return;
+
+  const res = await fetch(`/api/book/${bookId}/comment/${commentId}/reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: replyText.trim() })
+  });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) {
+    location.reload();
+  } else if (data.redirect_url) {
+    location.href = data.redirect_url;
+  }
+}
+
+async function deleteBookFromProfile(btn) {
+  const bookId = btn.dataset.bookId;
+  if (!confirm('정말 이 게시글을 삭제하시겠습니까?')) return;
+
+  const res = await fetch(`/api/book/${bookId}/delete`, { method: 'POST' });
+  const data = await res.json();
+  alert(data.message || '처리되었습니다.');
+  if (data.success) location.reload();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const trustBar = document.getElementById('trustScoreBar');
+  if (trustBar && trustBar.dataset.trustScore !== undefined) {
+    trustBar.style.width = `${trustBar.dataset.trustScore}%`;
+  }
+
+  const editForm = document.getElementById('editProfileForm');
+  if (editForm) {
+    editForm.addEventListener('submit', (e) => {
+      const newPw = document.getElementById('new_password').value;
+      const confirmPw = document.getElementById('confirm_password').value;
+      if (newPw && newPw !== confirmPw) {
+        e.preventDefault();
+        alert('새 비밀번호와 새 비밀번호 확인이 일치하지 않습니다.');
+      }
     });
+  }
 });
 </script>
 {% endblock %}
