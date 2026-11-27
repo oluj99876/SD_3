@@ -304,7 +304,9 @@
 
               {% if can_manage %}
                 <div class="mt-auto d-flex gap-2">
+                  {% if book['status'] != 'RESERVED' %}
                   <a href="{{ url_for('edit_post', book_id=book['id']) }}" class="btn btn-sm btn-outline-secondary flex-fill">수정</a>
+                  {% endif %}
                   <button type="button" class="btn btn-sm btn-outline-danger flex-fill"
                           data-book-id="{{ book['id'] }}"
                           onclick="deleteBookFromProfile(this)">
@@ -368,19 +370,21 @@
             <div class="mb-3">
               <label for="edit_name" class="form-label fw-semibold">이름 <span class="text-danger">*</span></label>
               <input type="text" class="form-control" id="edit_name" name="name"
-                     value="{{ target_user['name'] }}" required>
+                     value="{{ target_user['name'] }}" minlength="1" maxlength="30" required>
             </div>
 
             <div class="mb-3">
               <label for="edit_department" class="form-label fw-semibold">학과 <span class="text-danger">*</span></label>
               <input type="text" class="form-control" id="edit_department" name="department"
-                     value="{{ target_user['department'] or '' }}" required>
+                     value="{{ target_user['department'] or '' }}" minlength="1" maxlength="50" required>
             </div>
 
             <div class="mb-3">
               <label for="edit_phone" class="form-label fw-semibold">전화번호</label>
               <input type="tel" class="form-control" id="edit_phone" name="phone"
-                     value="{{ target_user['phone'] or '' }}" placeholder="010-0000-0000">
+                     value="{{ target_user['phone'] or '' }}" placeholder="01012345678"
+                     pattern="010[0-9]{8}" minlength="11" maxlength="11" inputmode="numeric">
+              <div class="form-text">하이픈 없이 01012345678 형식으로 입력해주세요.</div>
             </div>
 
             <hr class="my-4">

@@ -56,7 +56,9 @@
                                         <option value="RESERVED" {% if book.status == 'RESERVED' %}selected{% endif %}>예약중</option>
                                         <option value="SOLD" {% if book.status == 'SOLD' %}selected{% endif %}>거래완료</option>
                                     </select>
+                                    {% if book.status != 'RESERVED' %}
                                     <a href="{{ url_for('edit_post', book_id=book.id) }}" class="btn btn-sm btn-outline-primary">수정</a>
+                                    {% endif %}
                                     <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteBook" data-book-id="{{ book.id }}">삭제</button>
                                 </div>
                                 {% endif %}

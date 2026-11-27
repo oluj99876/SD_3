@@ -38,12 +38,12 @@
             <div class="col-md-4">
               <label for="original_price" class="form-label fw-semibold">정가 (원)</label>
               <input type="number" class="form-control" id="original_price" name="original_price"
-                     value="{{ book['original_price'] if book['original_price'] is not none else '' }}" min="0">
+                     value="{{ book['original_price'] if book['original_price'] is not none else '' }}" min="0" max="1000000" step="1">
             </div>
             <div class="col-md-4">
               <label for="selling_price" class="form-label fw-semibold">판매 희망가 (원) <span class="text-danger">*</span></label>
               <input type="number" class="form-control" id="selling_price" name="selling_price"
-                     value="{{ book['selling_price'] }}" min="0" required>
+                     value="{{ book['selling_price'] }}" min="0" max="1000000" step="1" required>
             </div>
             <div class="col-md-4">
               <label for="condition_grade" class="form-label fw-semibold">도서 상태 등급 <span class="text-danger">*</span></label>

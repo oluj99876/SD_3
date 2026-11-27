@@ -48,8 +48,8 @@ def parse_nonnegative_price(value, required=False):
         price = int(value)
     except ValueError:
         return None, '가격은 정수로 입력해주세요.'
-    if price < 0:
-        return None, '가격은 0원 이상으로 입력해주세요.'
+    if not 0 <= price <= 1_000_000:
+        return None, '가격은 0원 이상 1,000,000원 이하로 입력해주세요.'
     return price, None
 
 
@@ -552,12 +552,21 @@ def edit_profile(user_id):
     new_password = request.form.get('new_password', '')
     confirm_password = request.form.get('confirm_password', '')
 
-    if not name or not department:
-        flash('이름과 학과는 필수 입력 항목입니다.', 'danger')
+    if not 1 <= len(name) <= 30:
+        flash('이름은 1자 이상 30자 이하로 입력해주세요.', 'danger')
+        return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+    if not 1 <= len(department) <= 50:
+        flash('학과는 1자 이상 50자 이하로 입력해주세요.', 'danger')
+        return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
+    if phone and not re.fullmatch(r'010[0-9]{8}', phone):
+        flash('전화번호는 하이픈 없이 01012345678 형식으로 입력해주세요.', 'danger')
         return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
 
     new_password_hash = target_user['password_hash']
     if new_password:
+        if not 4 <= len(new_password) <= 20:
+            flash('새 비밀번호는 4자 이상 20자 이하로 입력해주세요.', 'danger')
+            return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
         if new_password != confirm_password:
             flash('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.', 'danger')
             return redirect(url_for('user_profile', user_id=user_id, tab='edit'))
@@ -794,6 +803,10 @@ def edit_post(book_id):
     if not book or (book['seller_id'] != g.user['id'] and not is_admin_user()):
         flash('수정 권한이 없습니다.', 'danger')
         return redirect(url_for('index'))
+
+    if book['status'] == 'RESERVED':
+        flash('예약 진행 중인 게시글은 수정할 수 없습니다.', 'warning')
+        return redirect(url_for('detail', book_id=book_id))
 
     cursor.execute(
         """SELECT * FROM book_images
