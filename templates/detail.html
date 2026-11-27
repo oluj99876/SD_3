@@ -97,6 +97,9 @@
                                 <a href="{{ url_for('user_profile', user_id=book.seller_id) }}" class="fw-bold text-decoration-none ms-1">
                                     {{ book.name }} ({{ book.student_id }})
                                 </a>
+                                {% if book.department %}
+                                <span class="text-muted small ms-2">{{ book.department }}</span>
+                                {% endif %}
                             </div>
                             <span class="badge bg-light text-dark border">신뢰 지수 {{ book.trust_score }}점</span>
                         </div>
@@ -109,6 +112,10 @@
                     <div>
                         <strong>현재 예약 진행 중</strong>
                         <span class="ms-2">예약자: {{ active_trade.buyer_name }} ({{ active_trade.buyer_student_id }})</span>
+                        <div class="small mt-1">
+                            {% if book.phone %}<span>판매자 연락처: {{ book.phone }}</span>{% endif %}
+                            {% if active_trade.buyer_phone %}<span class="ms-2">예약자 연락처: {{ active_trade.buyer_phone }}</span>{% endif %}
+                        </div>
                     </div>
                     <div class="d-flex gap-2">
                         {% if g.user.id == book.seller_id or g.user.is_admin == 1 %}

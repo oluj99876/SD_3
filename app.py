@@ -40,6 +40,19 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def parse_nonnegative_price(value, required=False):
+    value = (value or '').strip()
+    if not value:
+        return (None, None) if not required else (None, '판매 희망가를 입력해주세요.')
+    try:
+        price = int(value)
+    except ValueError:
+        return None, '가격은 정수로 입력해주세요.'
+    if price < 0:
+        return None, '가격은 0원 이상으로 입력해주세요.'
+    return price, None
+
+
 def strip_html(text):
     if not text:
         return ''
@@ -620,9 +633,21 @@ def register_book():
         title = request.form['title'].strip()
         author = request.form['author'].strip()
         publisher = request.form['publisher'].strip()
-        original_price = request.form.get('original_price', type=int)
-        selling_price = request.form.get('selling_price', type=int)
-        condition_grade = request.form['condition_grade']
+        original_price, price_error = parse_nonnegative_price(request.form.get('original_price'))
+        if price_error:
+            flash(f'정가: {price_error}', 'danger')
+            return redirect(url_for('register_book'))
+        selling_price, price_error = parse_nonnegative_price(request.form.get('selling_price'), required=True)
+        if price_error:
+            flash(price_error, 'danger')
+            return redirect(url_for('register_book'))
+        if not publisher:
+            flash('출판사를 입력해주세요.', 'danger')
+            return redirect(url_for('register_book'))
+        condition_grade = request.form.get('condition_grade', '').strip()
+        if condition_grade not in ('최상', '상', '중', '하'):
+            flash('도서 상태 등급을 선택해주세요.', 'danger')
+            return redirect(url_for('register_book'))
         description = request.form['description']
         ai_result = request.form.get('ai_evaluated_result', '').strip()
 
@@ -701,7 +726,8 @@ def detail(book_id):
         book_images = [book['image_filename'] or 'default_book.png']
 
     cursor.execute(
-        """SELECT t.*, buyer.name AS buyer_name, buyer.student_id AS buyer_student_id
+        """SELECT t.*, buyer.name AS buyer_name, buyer.student_id AS buyer_student_id,
+                  buyer.phone AS buyer_phone
            FROM trades t
            JOIN users buyer ON t.buyer_id = buyer.id
            WHERE t.book_id = ? AND t.status = 'RESERVED'
@@ -781,9 +807,21 @@ def edit_post(book_id):
         title = request.form['title'].strip()
         author = request.form['author'].strip()
         publisher = request.form['publisher'].strip()
-        original_price = request.form.get('original_price', type=int)
-        selling_price = request.form.get('selling_price', type=int)
-        condition_grade = request.form['condition_grade']
+        original_price, price_error = parse_nonnegative_price(request.form.get('original_price'))
+        if price_error:
+            flash(f'정가: {price_error}', 'danger')
+            return redirect(url_for('edit_post', book_id=book_id))
+        selling_price, price_error = parse_nonnegative_price(request.form.get('selling_price'), required=True)
+        if price_error:
+            flash(price_error, 'danger')
+            return redirect(url_for('edit_post', book_id=book_id))
+        if not publisher:
+            flash('출판사를 입력해주세요.', 'danger')
+            return redirect(url_for('edit_post', book_id=book_id))
+        condition_grade = request.form.get('condition_grade', '').strip()
+        if condition_grade not in ('최상', '상', '중', '하'):
+            flash('도서 상태 등급을 선택해주세요.', 'danger')
+            return redirect(url_for('edit_post', book_id=book_id))
         description = request.form['description']
 
         ai_action = request.form.get('ai_action', '').strip()
