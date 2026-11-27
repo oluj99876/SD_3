@@ -155,6 +155,29 @@ def ensure_database_initialized():
                 with open(schema_path, 'r', encoding='utf-8') as f:
                     conn.executescript(f.read())
                 need_seed = True
+
+        # Apply rating validation to existing databases as well as newly created ones.
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reviews'")
+        if cursor.fetchone() is not None:
+            conn.executescript(
+                """
+                CREATE TRIGGER IF NOT EXISTS reviews_rating_insert_check
+                BEFORE INSERT ON reviews
+                WHEN NEW.rating NOT IN (1, 2, 3, 4, 5)
+                     OR NEW.rating != CAST(NEW.rating AS INTEGER)
+                BEGIN
+                    SELECT RAISE(ABORT, 'rating must be an integer from 1 to 5');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS reviews_rating_update_check
+                BEFORE UPDATE OF rating ON reviews
+                WHEN NEW.rating NOT IN (1, 2, 3, 4, 5)
+                     OR NEW.rating != CAST(NEW.rating AS INTEGER)
+                BEGIN
+                    SELECT RAISE(ABORT, 'rating must be an integer from 1 to 5');
+                END;
+                """
+            )
         conn.commit()
     finally:
         conn.close()
@@ -236,11 +259,31 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        student_id = request.form['student_id'].strip()
-        name = request.form['name'].strip()
-        department = request.form.get('department', '').strip() or '소프트웨어학과'
+        student_id = request.form.get('student_id', '').strip()
+        name = request.form.get('name', '').strip()
+        department = request.form.get('department', '').strip()
         phone = request.form.get('phone', '').strip()
-        password = request.form['password']
+        password = request.form.get('password', '')
+        password_confirm = request.form.get('password_confirm', '')
+
+        if not re.fullmatch(r'[0-9]{7}', student_id):
+            flash('학번은 숫자 7자리로 입력해주세요.', 'danger')
+            return redirect(url_for('register'))
+        if not 1 <= len(name) <= 30:
+            flash('이름은 1자 이상 30자 이하로 입력해주세요.', 'danger')
+            return redirect(url_for('register'))
+        if not 1 <= len(department) <= 50:
+            flash('학과는 1자 이상 50자 이하로 입력해주세요.', 'danger')
+            return redirect(url_for('register'))
+        if phone and not re.fullmatch(r'010[0-9]{8}', phone):
+            flash('전화번호는 하이픈 없이 01012345678 형식으로 입력해주세요.', 'danger')
+            return redirect(url_for('register'))
+        if not 4 <= len(password) <= 20:
+            flash('비밀번호는 4자 이상 20자 이하로 입력해주세요.', 'danger')
+            return redirect(url_for('register'))
+        if password != password_confirm:
+            flash('비밀번호와 비밀번호 확인이 일치하지 않습니다.', 'danger')
+            return redirect(url_for('register'))
 
         db = get_db()
         cursor = db.cursor()
@@ -250,11 +293,16 @@ def register():
             return redirect(url_for('register'))
 
         hashed_password = generate_password_hash(password)
-        cursor.execute(
-            """INSERT INTO users (student_id, name, department, phone, password_hash)
-               VALUES (?, ?, ?, ?, ?)""",
-            (student_id, name, department, phone, hashed_password)
-        )
+        try:
+            cursor.execute(
+                """INSERT INTO users (student_id, name, department, phone, password_hash)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (student_id, name, department, phone, hashed_password)
+            )
+        except sqlite3.IntegrityError:
+            db.rollback()
+            flash('이미 등록된 학번입니다.', 'danger')
+            return redirect(url_for('register'))
         db.commit()
         flash('회원가입이 완료되었습니다. 로그인해주세요.', 'success')
         return redirect(url_for('login'))
@@ -1091,10 +1139,16 @@ def submit_review(trade_id):
         return jsonify({'success': False, 'message': '로그인이 필요합니다.'}), 401
 
     data = request.get_json() or {}
+    raw_rating = data.get('rating')
+    if isinstance(raw_rating, bool):
+        return jsonify({'success': False, 'message': '평점은 1점부터 5점까지의 정수만 선택할 수 있습니다.'}), 400
     try:
-        rating = float(data.get('rating', 4.0))
+        rating_value = float(raw_rating)
     except (TypeError, ValueError):
-        rating = 4.0
+        return jsonify({'success': False, 'message': '평점은 1점부터 5점까지의 정수만 선택할 수 있습니다.'}), 400
+    if not math.isfinite(rating_value) or not rating_value.is_integer() or int(rating_value) not in (1, 2, 3, 4, 5):
+        return jsonify({'success': False, 'message': '평점은 1점부터 5점까지의 정수만 선택할 수 있습니다.'}), 400
+    rating = int(rating_value)
     comment = data.get('comment', '').strip()
 
     if not comment:
@@ -1108,8 +1162,8 @@ def submit_review(trade_id):
     if not trade or (trade['buyer_id'] != g.user['id'] and not is_admin_user()):
         return jsonify({'success': False, 'message': '평가 작성 권한이 없습니다.'}), 403
 
-    if trade['status'] == 'CANCELLED':
-        return jsonify({'success': False, 'message': '취소된 거래는 평가할 수 없습니다.'}), 400
+    if trade['status'] != 'COMPLETED':
+        return jsonify({'success': False, 'message': '판매자가 거래 완료 처리한 거래만 평가할 수 있습니다.'}), 400
 
     cursor.execute("SELECT id FROM reviews WHERE trade_id = ?", (trade_id,))
     if cursor.fetchone():
@@ -1129,8 +1183,6 @@ def submit_review(trade_id):
            WHERE id = ?""",
         (delta, trade['seller_id'])
     )
-    cursor.execute("UPDATE trades SET status = 'COMPLETED' WHERE id = ?", (trade_id,))
-    cursor.execute("UPDATE books SET status = 'SOLD' WHERE id = ?", (trade['book_id'],))
     db.commit()
 
     return jsonify({'success': True, 'message': '거래 평가가 완료되었으며 판매자 신뢰 지수에 반영되었습니다.'})

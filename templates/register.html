@@ -14,39 +14,39 @@
           <div class="mb-3">
             <label for="student_id" class="form-label fw-semibold">학번 <span class="text-danger">*</span></label>
             <input type="text" class="form-control" id="student_id" name="student_id"
-                   placeholder="예: 20240001" required autofocus>
+                   placeholder="예: 2024001" pattern="[0-9]{7}" minlength="7" maxlength="7" inputmode="numeric" required autofocus>
             <div class="form-text">로그인 시 아이디로 사용됩니다. 잘못 입력할 경우 탈퇴 후 재가입해야 합니다.</div>
           </div>
 
           <div class="mb-3">
             <label for="name" class="form-label fw-semibold">이름 <span class="text-danger">*</span></label>
             <input type="text" class="form-control" id="name" name="name"
-                   placeholder="실명을 입력하세요" required>
+                   placeholder="이름을 입력하세요" minlength="1" maxlength="30" required>
           </div>
 
           <div class="mb-3">
             <label for="department" class="form-label fw-semibold">학과 <span class="text-danger">*</span></label>
             <input type="text" class="form-control" id="department" name="department"
-                   placeholder="예: 소프트웨어학과" required>
+                   placeholder="예: 소프트웨어학과" minlength="1" maxlength="50" required>
           </div>
 
           <div class="mb-3">
             <label for="phone" class="form-label fw-semibold">전화번호</label>
             <input type="tel" class="form-control" id="phone" name="phone"
-                   placeholder="예: 010-1234-5678">
+                   placeholder="예: 01012345678" pattern="010[0-9]{8}" minlength="11" maxlength="11" inputmode="numeric">
             <div class="form-text">거래 예약 승인 후 직거래 연락 시 참고용으로 활용됩니다.</div>
           </div>
 
           <div class="mb-3">
             <label for="password" class="form-label fw-semibold">비밀번호 <span class="text-danger">*</span></label>
             <input type="password" class="form-control" id="password" name="password"
-                   placeholder="비밀번호를 입력하세요" required>
+                   placeholder="4~20자로 입력하세요" minlength="4" maxlength="20" required>
           </div>
 
           <div class="mb-4">
             <label for="password_confirm" class="form-label fw-semibold">비밀번호 확인 <span class="text-danger">*</span></label>
-            <input type="password" class="form-control" id="password_confirm"
-                   placeholder="비밀번호를 한 번 더 입력하세요" required>
+            <input type="password" class="form-control" id="password_confirm" name="password_confirm"
+                   placeholder="비밀번호를 한 번 더 입력하세요" minlength="4" maxlength="20" required>
           </div>
 
           <div class="d-grid gap-2">

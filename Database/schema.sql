@@ -83,7 +83,7 @@ CREATE TABLE reviews (
     trade_id INTEGER NOT NULL UNIQUE,
     reviewer_id INTEGER NOT NULL,
     reviewee_id INTEGER NOT NULL,
-    rating REAL NOT NULL,
+    rating REAL NOT NULL CHECK (rating IN (1, 2, 3, 4, 5)),
     comment TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (trade_id) REFERENCES trades(id) ON DELETE CASCADE,
